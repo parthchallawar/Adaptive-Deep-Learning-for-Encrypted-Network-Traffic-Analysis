@@ -1,0 +1,13 @@
+{
+  "id": "<kaggle-username>/adl-encrypted-traffic-train",
+  "title": "ADL Encrypted Traffic - Train",
+  "code_file": "kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["<kaggle-username>/adl-encrypted-traffic-processed"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

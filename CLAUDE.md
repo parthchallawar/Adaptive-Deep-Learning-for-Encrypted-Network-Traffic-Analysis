@@ -28,3 +28,4 @@ Project guidance for Claude Code. Keep this file updated as conventions solidify
 ## Notes
 
 - Fill in setup/run instructions here once the environment (Python version, dependency manager, dataset sources) is decided.
+- Kaggle CLI workflow (dataset upload, kernel push/pull for GPU training) — see `docs/kaggle-workflow.md` and `scripts/kaggle_sync.sh`.

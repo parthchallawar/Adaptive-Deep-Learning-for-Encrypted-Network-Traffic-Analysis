@@ -12,9 +12,13 @@ env/
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
-!data/processed/.gitkeep
+!data/processed/dataset-metadata.json
 results/*
 !results/.gitkeep
+
+# Kaggle credentials (never commit the API token)
+kaggle.json
+.kaggle/
 *.ckpt
 *.pt
 *.pth
