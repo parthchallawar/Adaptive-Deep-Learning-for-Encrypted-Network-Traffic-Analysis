@@ -27,5 +27,7 @@ Project guidance for Claude Code. Keep this file updated as conventions solidify
 
 ## Notes
 
+- Research direction, novelty statement, dataset and Kaggle strategy: `docs/research-analysis.md`. Specs `specs/000`..`020` (index in `specs/README.md`) define every module; keep them in sync with the code.
+
 - Fill in setup/run instructions here once the environment (Python version, dependency manager, dataset sources) is decided.
 - Kaggle CLI workflow (dataset upload, kernel push/pull for GPU training) — see `docs/kaggle-workflow.md` and `scripts/kaggle_sync.sh`.
