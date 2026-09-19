@@ -1,5 +1,9 @@
 {
   "title": "Adaptive Deep Learning for Encrypted Traffic - Processed Data",
-  "id": "<kaggle-username>/adl-encrypted-traffic-processed",
-  "licenses": [{"name": "CC0-1.0"}]
+  "id": "parthrchallawar/adl-encrypted-traffic-processed",
+  "licenses": [
+    {
+      "name": "CC0-1.0"
+    }
+  ]
 }

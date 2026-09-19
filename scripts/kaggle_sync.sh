@@ -6,6 +6,7 @@ set -euo pipefail
 DATASET_DIR="data/processed"
 KERNEL_DIR="kernel"
 RESULTS_DIR="results"
+CODE_STAGE_DIR=".kaggle-code"
 
 usage() {
   cat <<EOF
@@ -15,9 +16,15 @@ Commands:
   check                    Verify the kaggle CLI is installed and authenticated
   push-dataset             Create/upload data/processed as a Kaggle dataset
   version-dataset <msg>    Push a new version of an existing dataset
+  push-code [msg]          Package src/ + configs/ as a Kaggle dataset so kernels
+                           can import the project without internet access
   push-kernel              Push kernel/ to Kaggle (kernel-metadata.json required)
   pull-results <user>/<slug>   Download kernel output into results/
 EOF
+}
+
+kaggle_username() {
+  python -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'].lower())"
 }
 
 check() {
@@ -51,6 +58,36 @@ version_dataset() {
   kaggle datasets version -p "$DATASET_DIR" -m "$msg"
 }
 
+push_code() {
+  local msg="${1:-code sync $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  local user slug
+  user="$(kaggle_username)"
+  slug="adl-encrypted-traffic-code"
+
+  rm -rf "$CODE_STAGE_DIR"
+  mkdir -p "$CODE_STAGE_DIR"
+  # Ship only importable project code and configs — no data, no credentials.
+  cp -r src "$CODE_STAGE_DIR/src"
+  [ -d configs ] && cp -r configs "$CODE_STAGE_DIR/configs"
+  find "$CODE_STAGE_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
+  git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null || true
+
+  cat > "$CODE_STAGE_DIR/dataset-metadata.json" <<EOF
+{
+  "title": "ADL Encrypted Traffic - Code",
+  "id": "$user/$slug",
+  "licenses": [{"name": "CC0-1.0"}]
+}
+EOF
+
+  if kaggle datasets status "$user/$slug" >/dev/null 2>&1; then
+    kaggle datasets version -p "$CODE_STAGE_DIR" -m "$msg" --dir-mode zip
+  else
+    kaggle datasets create -p "$CODE_STAGE_DIR" --dir-mode zip
+  fi
+  echo "Code pushed as $user/$slug — mount it in the kernel and add it to sys.path."
+}
+
 push_kernel() {
   [ -f "$KERNEL_DIR/kernel-metadata.json" ] || {
     echo "Missing $KERNEL_DIR/kernel-metadata.json — set id/title/code_file before pushing." >&2
@@ -71,6 +108,7 @@ case "$cmd" in
   check) check ;;
   push-dataset) push_dataset ;;
   version-dataset) version_dataset "$@" ;;
+  push-code) push_code "$@" ;;
   push-kernel) push_kernel ;;
   pull-results) pull_results "$@" ;;
   *) usage; exit 1 ;;
