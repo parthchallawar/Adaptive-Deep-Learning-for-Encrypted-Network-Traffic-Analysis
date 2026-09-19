@@ -9,7 +9,7 @@ Project guidance for Claude Code. Keep this file updated as conventions solidify
 - `agents/` — role/persona definitions for the project's own multi-agent pipeline (e.g. data-agent, training-agent, evaluation-agent), distinct from `.claude/agents/` which holds Claude Code subagent tool definitions.
 - `agent-memory/` — persistent memory logs written by each agent in `agents/`, one subfolder per agent.
 - `.claude/` — Claude Code configuration: `settings.json`, custom `agents/` (Claude Code subagents), `commands/` (slash commands).
-- `src/` — Python source: `data/`, `models/`, `training/`, `evaluation/`, `utils/`.
+- `src/adl_etc/` — Python source (src-layout; the installable package is `adl_etc`): `data/`, `models/`, `training/`, `evaluation/`, `inference/`, `service/`, `dashboard/`, `utils/`.
 - `data/` — `raw/` (untouched input) and `processed/` (feature-engineered/cleaned) datasets. Large files should not be committed — see `.gitignore`.
 - `notebooks/` — exploratory analysis notebooks.
 - `tests/` — unit/integration tests, mirroring `src/` layout.

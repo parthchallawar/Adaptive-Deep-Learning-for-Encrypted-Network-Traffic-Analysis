@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adl-etc"
+version = "0.1.0"
+description = "Adaptive deep learning for encrypted network traffic analysis (AnytimeETC)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+# Phase 1 (data pipeline) only. Deliberately excludes torch: the flow builder and
+# tensoriser are pure NumPy, so the first milestone installs in seconds.
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "dpkt>=1.9.8",
+    "pyarrow>=16.0",
+    "omegaconf>=2.3",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# Phase 2 onward: models and experiment tracking.
+train = [
+    "torch>=2.4",
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "mlflow>=2.16",
+    "onnxruntime>=1.19",
+    "h5py>=3.11",
+]
+# Spec 001 Path A: the canonical HDF5 download and the public pretrained baseline.
+datazoo = [
+    "cesnet-datazoo>=0.1",
+    "cesnet-models>=0.1",
+]
+# Specs 016 to 018: local service, storage and dashboard.
+service = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+    "alembic>=1.13",
+    "streamlit>=1.38",
+    "plotly>=5.24",
+]
+# Optional PCAP backends (spec 002). The default dpkt backend is a core dependency.
+capture = [
+    "scapy>=2.6",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: needs a dataset download or a long run",
+    "gpu: needs a CUDA device",
+    "integration: crosses module boundaries, runs nightly",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
