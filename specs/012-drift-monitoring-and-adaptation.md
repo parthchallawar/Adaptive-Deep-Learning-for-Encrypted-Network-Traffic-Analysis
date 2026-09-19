@@ -3,6 +3,7 @@
 - **Status:** draft (monitoring required; adaptation is a stretch goal)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 14 of 18
 - **Depends on:** 004, 007, 008, 010, 011. **Used by:** 016, 017.
 
 ## Problem
@@ -14,7 +15,7 @@ Traffic changes over weeks (app updates, CDNs, new services). The year-long eval
 - Online drift signals, all label-free: mean K and commit rate per window (policy behaviour), rejection rate (spec 010), mean commit-safety `p_safe` at decision, NPP perplexity (spec 007), and class-prior shift (KL between the committed-class histogram and the val histogram).
 - Change detection per signal with CUSUM/Page-Hinkley and a combined drift level {none, warning, alarm}.
 - Dashboard panel and API endpoint exposing the signals and alarms.
-- Offline validation that the signals correlate with the measured accuracy decay across drift months.
+- Offline validation that the signals correlate with the measured accuracy decay across the drift weeks.
 
 ## Goals (stretch, "adaptation")
 
@@ -45,14 +46,14 @@ Each signal standardised by its val-period mean/std; CUSUM with threshold h = 5 
 
 ### Validation offline
 
-Replay the drift months in time order; plot each signal against the measured monthly macro-F1; report Spearman correlation and the lead time of the first alarm relative to a 3-point F1 drop.
+Replay the drift weeks in time order; plot each signal against the measured weekly macro-F1; report Spearman correlation and the lead time of the first alarm relative to a 3-point F1 drop.
 
 ### Adaptation (stretch)
 
 1. Collect the last N = 200k flows (unlabeled).
 2. Re-calibration: pseudo-labelled subset → refit temperatures/isotonic/quantiles; accept only if the NLL on a held-back 20% of the pseudo-labelled set improves.
 3. SSL refresh: 2 epochs of NPP+PFC with heads frozen and LR 1e-4; accept only if `npp_ppl` on held-back flows improves and the pseudo-label agreement between old and new model exceeds 98%.
-4. Evaluate on the following month with true labels (offline only) to report the gain.
+4. Evaluate on the following weeks with true labels (offline only) to report the gain.
 
 ## Inputs and outputs
 
@@ -72,7 +73,7 @@ Replay the drift months in time order; plot each signal against the measured mon
 ## Testing
 
 - CUSUM unit tests with synthetic step changes (detects within k windows, no false alarms on stationary noise).
-- Replay test on drift months: at least one signal alarms before month 11 (given the documented decay).
+- Replay test on the drift weeks: at least one signal alarms well before the end of the horizon (the dataset authors report a measurable drop by T+8 weeks).
 - Adaptation tests: acceptance gates reject a deliberately corrupted refresh.
 
 ## Interactions
@@ -82,7 +83,7 @@ Replay the drift months in time order; plot each signal against the measured mon
 ## Success criteria
 
 - Required: drift signals implemented, validated offline with correlation plots, shown in the dashboard.
-- Stretch: label-free adaptation recovers >= 25% of the drift-induced F1 loss on at least one drift month, or a negative result is reported.
+- Stretch: label-free adaptation recovers >= 25% of the drift-induced F1 loss on at least one drift week, or a negative result is reported.
 
 ## Open questions
 

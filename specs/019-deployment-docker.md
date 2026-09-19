@@ -1,9 +1,18 @@
 # Spec 019: Deployment (Docker, Linux)
 
-- **Status:** draft
+- **Status:** deferred (out of scope, owner decision 2026-09-17)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** deferred (owner decision 2026-09-17); build only if reactivated
 - **Depends on:** 002, 014, 016, 017, 018. **Used by:** demo, evaluators.
+
+> **Deferred.** Containerised deployment is not part of the current plan. Everything runs as local
+> processes instead: `uvicorn` for the service (spec 016), `streamlit run` for the dashboard
+> (spec 017), SQLite for storage (spec 018) and a file-based MLflow store (spec 014). No spec
+> depends on Docker to reach its success criteria. This document is kept as the design to pick up
+> if containerisation is wanted later (for example to hand the system to an evaluator, or to run
+> the Linux-only `ipfixprobe` exporter). Nothing here should be implemented until the owner
+> reactivates it.
 
 ## Problem
 

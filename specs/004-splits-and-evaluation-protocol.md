@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 4 of 18, then extended alongside 010, 009 and 011 (it is scaffolding, not a one-off build)
 - **Depends on:** 001, 003. **Used by:** all model and inference specs; 013; 014.
 
 ## Problem
@@ -26,12 +27,14 @@ The project's claims are about earliness, unknown detection, drift and budgets *
 
 | Split | Periods | Purpose |
 |---|---|---|
-| train | M-2022-3, M-2022-4, M-2022-5, M-2022-6 | supervised training; SSL (labels ignored) |
-| val | M-2022-7 | model selection, calibration, threshold fitting, controller tuning |
-| test-ID | M-2022-8 | in-distribution (next month) headline numbers |
-| test-drift | M-2022-9, M-2022-10, M-2022-11, M-2022-12 | drift curves (T+2..T+5 months); weekly sub-periods if DataZoo exposes them |
+| train | weeks 11 to 26 (months 3 to 6) | supervised training; SSL (labels ignored) |
+| val | weeks 27 to 30 | model selection, calibration, threshold fitting, controller tuning |
+| test-ID | weeks 31 to 34 | in-distribution (immediately after training) headline numbers |
+| test-drift | weeks 35 to 52, evaluated week by week | drift curves out to T+18 weeks |
 
-Rationale: months 1 to 2 are avoided because of the documented week-10 exporter change; training on four months gives about 3M flows in XS, enough for the model size; the remaining five months give a long drift horizon. If GPU time is short, train on M-3..M-4 only (documented as `train_small`).
+Granularity note (resolved 2026-09-17): the raw release mirrored on Kaggle is organised by ISO week and day (spec 001, Path B), so **weekly** drift curves are available directly and are the primary presentation; DataZoo's monthly periods (`M-2022-3` and so on) are the equivalent coarse split used when working through Path A. Week numbering follows the directory names `WEEK-2022-NN`.
+
+Rationale: weeks 1 to 10 are avoided because of the documented week-10 exporter change (the dataset authors recommend treating weeks 1 to 9 and 11 to 52 as separate regimes); starting at week 11 keeps the whole usable span contiguous. Four months of training data is about 3M flows in XS, enough for the model size, and leaves an 18-week drift horizon, longer than the 8 to 10 weeks reported by the dataset authors and by CAPE-Net. If GPU time is short, train on weeks 11 to 18 only (documented as `train_small`).
 
 Open-set split: 150 known / 30 unknown classes drawn with seed 42, stratified so that unknowns cover several categories and include both frequent and rare apps. Unknown flows appear only in val (for threshold fitting, at most 50% of unknown classes) and test. A second unknown draw (seed 43) is used to report variance of open-set metrics.
 
@@ -115,5 +118,5 @@ All computed by `src/evaluation/metrics.py`, each as a function of K where appli
 
 ## Open questions
 
-- Whether DataZoo exposes weekly periods for Year22 (its dataset class lists monthly periods). If not, weekly drift curves are derived by filtering on `ts` within the monthly shards.
 - Unknown-class count (30) is a judgement; CAPE-Net's exact split is not public, so we document ours.
+- Whether to report drift weekly (52 points, noisier) or in 4-week bins (cleaner) in the paper. Default: weekly curves with a 4-week rolling mean overlaid.

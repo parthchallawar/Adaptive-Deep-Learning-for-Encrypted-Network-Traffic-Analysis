@@ -3,15 +3,18 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 16 of 18 (before 016, which writes to it)
 - **Depends on:** none. **Used by:** 016, 017, 012.
 
 ## Problem
 
-The online system must persist flows, decisions, controller and drift state so that the dashboard can query history and so that demos are reproducible. Offline artefacts (shards, checkpoints, MLflow) have their own storage (specs 003, 014); this spec covers the service database only. The synopsis lists PostgreSQL/SQLite: SQLite for development and single-laptop demos, PostgreSQL in Docker for the full deployment, one schema for both.
+The online system must persist flows, decisions, controller and drift state so that the dashboard can query history and so that demos are reproducible. Offline artefacts (shards, checkpoints, MLflow) have their own storage (specs 003, 014); this spec covers the service database only. The synopsis lists PostgreSQL/SQLite.
+
+**Decision (2026-09-17):** SQLite is the only engine in the current plan, since containerised deployment is deferred (spec 019). The schema and the data-access layer stay engine-neutral (SQLAlchemy + Alembic, no SQLite-only types) so that PostgreSQL is a configuration change if deployment is reactivated. PostgreSQL-specific work is not implemented or tested for now.
 
 ## Goals
 
-- SQLAlchemy 2.x models with Alembic migrations; identical schema on SQLite and PostgreSQL.
+- SQLAlchemy 2.x models with Alembic migrations; schema written to be engine-neutral (SQLite now, PostgreSQL later without a rewrite).
 - Write path fast enough for 5k decisions/s in batches; read path indexed for the dashboard's queries.
 - Retention policy and export to Parquet.
 
@@ -35,7 +38,7 @@ Indexes: `decision(decided_at)`, `decision(flow_id)`, `decision(decision, decide
 
 ## Design
 
-- Async engine (`sqlite+aiosqlite` / `postgresql+asyncpg`) with batched inserts (executemany every 200 rows or 100 ms).
+- Async engine (`sqlite+aiosqlite`; `postgresql+asyncpg` reachable by config if deployment is reactivated) with batched inserts (executemany every 200 rows or 100 ms).
 - Alembic migrations in `src/service/db/migrations/`; `scripts/db_init.py`.
 - Retention: `scripts/db_prune.py --older-than 7d`; export `scripts/db_export.py --parquet` for analysis in notebooks.
 - Privacy: 5-tuple stored only as a salted hash; salt per capture session, discarded at session end, so flows cannot be re-identified later.
@@ -48,16 +51,16 @@ Indexes: `decision(decided_at)`, `decision(flow_id)`, `decision(decision, decide
 ## Edge cases
 
 - SQLite write contention with the dashboard reading: WAL mode; readers never block the writer.
-- PostgreSQL unavailable at start: service retries with backoff, then falls back to SQLite with a warning (demo continuity).
+- Database file locked or corrupt: the service creates a new one and logs loudly; decisions are never dropped silently.
 - Schema change with existing data: Alembic migration required; CI runs migrations on a fixture DB.
 
 ## Performance considerations
 
-- 5k decisions/s x 200 bytes = 1 MB/s; SQLite in WAL mode sustains this on an SSD; PostgreSQL comfortably.
+- 5k decisions/s x 200 bytes = 1 MB/s; SQLite in WAL mode sustains this on an SSD.
 
 ## Testing
 
-- Model/migration tests on SQLite in memory; a PostgreSQL test job in CI using the Docker service; batch-insert throughput test.
+- Model/migration tests on SQLite in memory; batch-insert throughput test.
 
 ## Interactions
 
@@ -65,7 +68,7 @@ Indexes: `decision(decided_at)`, `decision(flow_id)`, `decision(decision, decide
 
 ## Success criteria
 
-- Dashboard queries return in < 200 ms with 1M decision rows on SQLite; migrations apply cleanly on both engines.
+- Dashboard queries return in < 200 ms with 1M decision rows on SQLite; migrations apply cleanly from an empty database.
 
 ## Open questions
 

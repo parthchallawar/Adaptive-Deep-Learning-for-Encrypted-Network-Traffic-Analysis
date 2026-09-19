@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 18 of 18
 - **Depends on:** 004, 016, 018. **Used by:** demo and report figures.
 
 ## Problem
@@ -25,7 +26,7 @@ The synopsis promises results "presented through an interactive dashboard". The 
 2. **Flow inspector**: pick a flow; timeline of its packets (size bars signed by direction, IPT gaps), overlaid per-K class probability of the top-3 classes, p_safe(k), u(k), the decision marker, and per-packet NPP surprise (spec 010 explanation).
 3. **Budget control**: choose metric (mean K / compute / p95 K), set target, mode {auto, manual, quality-first}; plots of target vs realised over time and θ trajectory; accuracy-vs-budget curve from the offline replay for context.
 4. **Unknown & anomalies**: rejected flows table, rejection K histogram, cluster view (optional, spec 012 stretch), AUROC(K) curve from offline evaluation.
-5. **Drift**: the spec-012 signals with CUSUM states and alarms; offline drift curves (monthly macro-F1) for reference.
+5. **Drift**: the spec-012 signals with CUSUM states and alarms; offline drift curves (weekly macro-F1) for reference.
 6. **Experiments**: main table, accuracy-vs-K curves per model, Pareto fronts, efficiency scatter, calibration diagrams, all read from MLflow with run selection.
 7. **Model & system**: active model version, config summary, latency/throughput from `/metrics`, hardware.
 

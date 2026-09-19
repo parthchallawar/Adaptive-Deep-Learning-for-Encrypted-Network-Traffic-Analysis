@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 1 of 18
 - **Depends on:** none. **Used by:** 002, 003, 004, 015.
 
 ## Problem
@@ -24,7 +25,7 @@ The project needs (a) a large, labeled, time-stamped corpus of encrypted flows w
 
 | ID | Dataset | Role | Size (download) | Classes | Time structure | Access |
 |---|---|---|---|---|---|---|
-| D1 | CESNET-TLS-Year22, size XS | primary: supervised, drift, open-set | 2.69 GB `.h5` (S: 6.7 GB) | 180 apps, 24 categories | all of 2022, monthly periods in DataZoo | `cesnet-datazoo` download (liberouter.org bucket) |
+| D1 | CESNET-TLS-Year22, size XS | primary: supervised, drift, open-set | 2.69 GB `.h5` (S: 6.7 GB; raw weekly CSV mirror: about 30 GB) | 180 apps, 24 categories | all of 2022; monthly periods in DataZoo, **weekly/daily in the raw CSV form** | `cesnet-datazoo` download (liberouter.org bucket), or the Kaggle mirror (see Acquisition paths) |
 | D2 | CESNET-QUIC22, size XS | cross-protocol transfer; SSL corpus; baseline parity with 30pktTCNET | 2.71 GB `.h5` | 102 apps + 3 background | 4 weeks (W-2022-44..47) | `cesnet-datazoo` |
 | D3 | ISCX VPN-nonVPN 2016 | PCAP pipeline validation; standard-benchmark comparability; category-level transfer | about 28 GB pcap (subset of files acceptable) | 14 (7 categories x VPN/non-VPN) | none usable | direct HTTP from cicresearch.ca |
 | D4 | USTC-TFC2016 | "unusual traffic" anomaly experiment | 3.7 GB pcap | 10 benign + 10 malware | none | GitHub mirror (davidyslu/USTC-TFC2016) |
@@ -32,9 +33,24 @@ The project needs (a) a large, labeled, time-stamped corpus of encrypted flows w
 
 Optional later: CESNET-TLS22 XS (1.29 GB, 2 weeks, 191 apps) for a second in-distribution check; CESNET-QUICEXT-25 for a second year-long drift study.
 
+## Acquisition paths for D1/D2
+
+Two paths exist and both are supported; the choice affects time granularity and how data reaches Kaggle.
+
+| | Path A: DataZoo HDF5 (canonical) | Path B: Kaggle mirror of the raw release |
+|---|---|---|
+| Source | `cesnet-datazoo` downloads `CESNET-TLS-Year22-XS.h5` (2.69 GB) from liberouter.org | public Kaggle dataset `pranjalkar99/cesnet-22` (about 30 GB), verified 2026-09-17 to contain `CESNET-TLS-Year22/WEEK-2022-00..52/<date>/flows-*.csv.xz` plus per-day and per-week `stats-*.json`; `zilinpeng/cesnet-quic22` mirrors QUIC22 the same way |
+| Granularity | DataZoo periods (monthly for this dataset) | **daily and weekly**, the full 53-week span |
+| Loading | DataZoo API: known/unknown class selection, period configs, DataLoaders | our own CSV parser into the spec-003 shard format |
+| Local cost | 2.69 GB download, then upload of about 4 GB of shards to a private Kaggle dataset | **zero local download**: mount the mirror inside a Kaggle CPU session, export shards there, save them as that kernel's output dataset |
+| Needs internet in kernels | yes (or the shard upload path) | no |
+| Trust | canonical, published by CESNET | third-party re-upload: must be verified before use |
+
+**Decision:** Path B is the default for the *drift study* (weekly granularity is what the research question needs and it removes the upload entirely), with Path A used for verification and for anything that benefits from DataZoo's open-set helpers. Verification of the mirror is mandatory before any result depends on it: per-day flow counts must match the `stats-*.json` shipped alongside, the class list must match the 180 services in the official servicemap, and a random sample of 10k flows must match the DataZoo XS HDF5 on the overlapping fields. If verification fails, fall back to Path A and document it.
+
 ## How it works
 
-### D1/D2 via DataZoo
+### D1/D2 via DataZoo (Path A)
 
 ```python
 from cesnet_datazoo.datasets import CESNET_TLS_Year22
@@ -55,6 +71,12 @@ ds.set_dataset_config_and_initialize(cfg)
 ```
 
 The exporter script `scripts/export_datazoo.py` iterates the DataZoo dataframes for each period and writes shards (spec 003) so that Kaggle never needs DataZoo or internet.
+
+### D1/D2 via the raw weekly CSVs (Path B)
+
+`scripts/export_raw_csv.py` reads `flows-YYYYMMDD.csv.xz` directly (streaming, chunked), parses the PPI columns (packet sizes, directions, inter-packet times as delimited strings) and the flow-statistics columns, drops all identifier columns (SNI, JA3, IPs, ASN, ports) and writes the same shards as Path A, partitioned by ISO week. The same script runs locally or inside a Kaggle kernel with the mirror mounted read-only at `/kaggle/input/cesnet-22/`; in the Kaggle case its output goes to `/kaggle/working/` and is saved as a dataset version for training kernels to mount (spec 015).
+
+A `--verify` mode implements the checks listed above (per-day counts against `stats-*.json`, class list, and a sampled field-level comparison against the DataZoo HDF5 when it is available locally).
 
 ### D3/D4 PCAPs
 
@@ -106,3 +128,4 @@ The exporter script `scripts/export_datazoo.py` iterates the DataZoo dataframes 
 
 - Whether to also pull D1 at size S (25M flows, 6.7 GB) for a final "scale" experiment near the end. Default: no.
 - ISCX subset size for the category-level transfer experiment (default: all pcaps, since disk allows it).
+- Whether the raw mirror's flows are the full population or a sample per day (the official release is already sampled; the `stats-*.json` files answer this during verification).

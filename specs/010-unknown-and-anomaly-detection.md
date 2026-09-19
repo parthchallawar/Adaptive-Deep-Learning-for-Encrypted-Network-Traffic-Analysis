@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 11 of 18 (before 009, which consumes its unknown score)
 - **Depends on:** 006, 008. **Used by:** 009, 011, 012, 016, 017. **Research contribution:** C2 (hypothesis H3).
 
 ## Problem

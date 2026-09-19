@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 13 of 18
 - **Depends on:** 006, 009, 010. **Used by:** 012, 016, 017. **Research contribution:** C3 (hypothesis H4).
 
 ## Problem
@@ -59,7 +60,7 @@ Beyond the global knob, the policy already allocates effort per flow (easy flows
 
 ## Evaluation (H4)
 
-- Offline replay on saved scores (spec 008) over val → test-ID → drift months in time order, with synthetic disturbances: (a) class-mix shift (resample flows so that hard classes double), (b) burst of unknowns (inject D1 unknown-split flows at 10%), (c) step change of `B*` from 8 to 5 to 8.
+- Offline replay on saved scores (spec 008) over val → test-ID → drift weeks in time order, with synthetic disturbances: (a) class-mix shift (resample flows so that hard classes double), (b) burst of unknowns (inject D1 unknown-split flows at 10%), (c) step change of `B*` from 8 to 5 to 8.
 - Metrics: absolute tracking error, fraction of windows within 5% of `B*`, settling time after a step, accuracy vs budget curve, comparison against static θ tuned on val.
 - Online run in the service (spec 016) on a replayed pcap to verify latency of the loop.
 
@@ -92,7 +93,7 @@ Beyond the global knob, the policy already allocates effort per flow (easy flows
 
 ## Success criteria
 
-- On the drift months, mean tracking error <= 5% with the controller versus >= 15% for the static threshold (if the static error is smaller, report it honestly and analyse why).
+- Over the drift weeks, mean tracking error <= 5% with the controller versus >= 15% for the static threshold (if the static error is smaller, report it honestly and analyse why).
 - No oscillation in any replay; settling time after a step change <= 5 windows.
 
 ## Open questions

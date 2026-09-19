@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** continuous, never queued: every spec lands with its own tests
 - **Depends on:** all. **Used by:** all.
 
 ## Problem
@@ -50,7 +51,7 @@ Markers: `@pytest.mark.slow`, `@pytest.mark.gpu`, `@pytest.mark.integration`. De
 ## CI (GitHub Actions)
 
 - `ci.yml`: ruff, mypy, unit tests on Ubuntu and Windows (Windows job skips ipfixprobe/NFStream tests).
-- `nightly.yml`: integration tests, kernel `--smoke`, docker compose smoke (spec 019).
+- `nightly.yml`: integration tests and kernel `--smoke`. (A container smoke test would belong here if spec 019 is ever reactivated.)
 - Artefacts: coverage report, smoke report JSON.
 
 ## Code conventions
@@ -66,7 +67,7 @@ Markers: `@pytest.mark.slow`, `@pytest.mark.gpu`, `@pytest.mark.integration`. De
 
 ## Edge cases
 
-- Tests needing Docker on CI runners without it: skipped with a reason, never silently passing.
+- Tests needing an optional backend (NFStream, ipfixprobe) or Docker: skipped with an explicit reason, never silently passing. The default pure-Python path is always exercised.
 - Randomness in tests: all seeded; flaky tests are bugs.
 
 ## Testing the tests

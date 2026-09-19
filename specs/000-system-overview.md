@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** reference, never implemented
 - **Background:** `docs/research-analysis.md`
 
 ## Problem
@@ -16,7 +17,7 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 3. A learned three-way stopping policy (C2): continue / commit / reject-as-unknown.
 4. A budget controller (C3) that holds a target packet or compute budget under drift.
 5. A unified evaluation protocol (C4): accuracy, earliness, unknown detection, drift, latency, compute, all as functions of prefix length K and of test period.
-6. A working system: PCAP and live input, FastAPI inference service, Streamlit dashboard, SQLite/PostgreSQL storage, MLflow tracking, Docker deployment.
+6. A working system: PCAP and live input, FastAPI inference service, Streamlit dashboard, SQLite storage, MLflow tracking, all run as local processes (containerised deployment deferred, spec 019).
 7. A report/paper with ablations and multi-seed statistics.
 
 ## Non-goals
@@ -33,14 +34,14 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
                       offline (Kaggle GPU + local CPU)
  ┌──────────────────────────────────────────────────────────────────────────┐
  │  DataZoo (CESNET TLS-Year22 / QUIC22)  ──┐                               │
- │  PCAP (ISCX, USTC) ── ipfixprobe/NFStream ┤──► tensor shards (001-003)   │
+ │  PCAP (ISCX, USTC) ── flow builder (dpkt)  ┤──► tensor shards (001-003)   │
  │                                            │                              │
  │  SSL pretraining (007) ─► supervised prefix fine-tune (008)               │
  │        └─► stop / unknown heads (009, 010) ─► calibration per K           │
  │  Baselines (005) ──────────────────────────► evaluation harness (004,013) │
  │  MLflow (014)                                                             │
  └──────────────────────────────────────────────────────────────────────────┘
-                      online (Docker compose, CPU)
+                      online (local processes, CPU)
  ┌──────────────────────────────────────────────────────────────────────────┐
  │ capture/pcap ─► flow builder (002) ─► per-packet PPI ─► PAT stream infer  │
  │      ─► policy (009/010) ─► controller (011) ─► decision                  │
@@ -70,7 +71,7 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 | 016 | Inference service (FastAPI) | `src/service/` |
 | 017 | Dashboard (Streamlit) | `src/dashboard/` |
 | 018 | Storage and database | `src/service/db/` |
-| 019 | Deployment (Docker) | `docker/`, `docker-compose.yml` |
+| 019 | Deployment (Docker) — **deferred**, not in the current plan | `docker/`, `docker-compose.yml` |
 | 020 | Testing and quality | `tests/` |
 
 ## Key definitions (used across all specs)
@@ -80,7 +81,7 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 - **Prefix K:** the first K packets of a flow's PPI, 1 <= K <= 30.
 - **Decision:** one of `COMMIT(class)`, `REJECT(unknown)`, `CONTINUE`. A flow's final outcome is its first non-CONTINUE decision, or a forced decision at K = min(30, flow length).
 - **Budget:** a target on E[K] (mean packets read), E[cost] (packets x layers evaluated), or a quantile of K.
-- **Period:** a DataZoo time period name (e.g. `M-2022-8`) used for temporal splits.
+- **Period:** a named time slice used for temporal splits: an ISO week of the raw release (`WEEK-2022-31`, the default granularity) or a DataZoo month (`M-2022-8`) when working through the HDF5 path.
 
 ## Research hypotheses
 
@@ -89,7 +90,7 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 | H1 | Prefix-predictive SSL improves accuracy at K <= 8 and reduces mean packets-to-decision at equal accuracy vs training from scratch and vs masked-only SSL | accuracy@K curve, AUC of accuracy-vs-K, mean K at 95% of full accuracy |
 | H2 | The learned commit-safety head dominates max-prob thresholds (ECHO/CAPE-style) and an RL policy (FastFlow-style) on the accuracy vs mean-K Pareto front | Pareto front area, accuracy at fixed mean K in {4, 6, 8} |
 | H3 | Prefix-conditioned unknown scoring rejects unknown apps earlier and with higher AUROC than a fixed-checkpoint energy score | AUROC(K), mean K at rejection, FPR@95TPR |
-| H4 | The budget controller holds E[K] within 5% of target across 4 drift months while static thresholds drift out of budget | budget error over time, accuracy at fixed budget |
+| H4 | The budget controller holds E[K] within 5% of target across the 18-week drift horizon while static thresholds drift out of budget | budget error over time, accuracy at fixed budget |
 | H5 | Drop/jitter-augmented SSL improves robustness to 5% to 20% packet loss and reordering | accuracy drop under perturbation |
 
 ## Success criteria (project level)
@@ -99,8 +100,12 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 - End-to-end demo: upload a PCAP or capture live, watch per-flow decisions arrive early, see unknown alerts and the budget knob work.
 - Report/paper draft with related work covering the sources in `docs/research-analysis.md`.
 
+## Scope decisions (owner, 2026-09-17)
+
+- **Containerised deployment is out of scope.** Spec 019 is deferred; the service, dashboard, database and MLflow store all run as local processes. The Linux-only `ipfixprobe` exporter is therefore optional too (spec 002 keeps a pure-Python backend as the default path).
+- **Kaggle credentials are configured** at `~/.kaggle/kaggle.json` (account `parthrchallawar`); the CLI authenticates successfully.
+
 ## Open questions
 
-- Confirm the Kaggle account is phone-verified (internet-enabled kernels) or plan to pre-download DataZoo files locally.
 - Confirm whether the owner wants the optional depth-axis exit (spec 006 section "Depth exits") in the main plan or as a stretch goal.
-- Location of the previously generated "ideal project" folder (not found in the repository).
+- Whether Kaggle kernels may use internet (phone-verified account). If not, data reaches Kaggle as a dataset mount and code as an attached utility dataset (spec 015); both paths are specified.

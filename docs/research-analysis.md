@@ -17,7 +17,7 @@ Classify encrypted flows from **packet metadata only** (size, direction, inter-a
 3. with **anomaly / unknown-traffic detection**,
 4. under an **automatic resource controller** that trades packet budget and compute effort against flow difficulty,
 5. evaluated on **accuracy, robustness (drift, packet loss), latency and compute cost**,
-6. exposed through a **FastAPI service, a Streamlit dashboard, a database, MLflow, Docker**.
+6. exposed through a **FastAPI service, a Streamlit dashboard, a database, MLflow** (the synopsis also lists Docker; containerised deployment was descoped on 2026-09-17, see section 7).
 
 The guide PDF adds: XGBoost / CNN / LSTM baselines, distribution-shift evaluation, ablations and efficiency analysis, and a strict leakage discipline.
 
@@ -95,8 +95,9 @@ Why this is realistic for one developer: the backbone is under 2M parameters; al
 
 - 180 web-service classes, 10M flows in XS (2.69 GB HDF5; S is 6.7 GB with 25M; full is 136 GB with 508M), captured across all of 2022 on a 100 Gbps ISP backbone; labels from TLS SNI.
 - Per flow: **PPI = first 30 packets x [IPT, direction, size, TCP push flag]** (payload-carrying packets only), flow statistics (bytes, packets, duration, 8-bin histograms), TCP flags, ASN. Exactly our feature scheme.
-- Loaded with `cesnet-datazoo`, which gives time-based train/val/test period selection, known/unknown class splitting for open-set experiments, and PyTorch DataLoaders. DataZoo exposes monthly periods for this dataset (M-2022-1 .. M-2022-12).
-- Known artefact: week 10 has an exporter-induced drift; the authors recommend evaluating weeks 1 to 9 and 11 to 52 as separate regimes. We train from month 3 onward.
+- Two ways in (spec 001): `cesnet-datazoo` downloads the 2.69 GB HDF5 and provides period selection, known/unknown class splitting and DataLoaders, but exposes only monthly periods for this dataset. The raw release, organised by ISO week and day, is mirrored publicly on Kaggle as `pranjalkar99/cesnet-22` (about 30 GB, verified on 2026-09-17 to contain weeks 0 to 52 as `flows-YYYYMMDD.csv.xz` with per-day statistics files).
+- **We default to the raw weekly form.** It gives weekly drift curves instead of monthly ones, which is what the research question needs, and it can be mounted directly inside a Kaggle CPU session, so no data is ever downloaded locally or uploaded. Because it is a third-party re-upload, verification against the shipped per-day statistics and against the canonical HDF5 is mandatory before any result depends on it.
+- Known artefact: week 10 has an exporter-induced drift; the authors recommend evaluating weeks 1 to 9 and 11 to 52 as separate regimes. We start at week 11.
 
 ### 5.2 Secondary: CESNET-QUIC22 (XS, 2.71 GB, 102 apps + 3 background classes, 4 weeks)
 
@@ -108,7 +109,7 @@ Required because the synopsis promises **PCAP and live input**. We run our own P
 
 ### 5.4 Live traffic
 
-Scapy/Npcap (Windows) or ipfixprobe (Linux/Docker) feeding the same flow builder; used for the dashboard demo only, never for reported numbers.
+Scapy with Npcap on Windows feeding the same flow builder; used for the dashboard demo only, never for reported numbers.
 
 ### 5.5 Is it enough? Do we need synthetic data?
 
@@ -116,18 +117,21 @@ Yes, it is enough: 10M labeled flows with a full year of drift is more than any 
 
 ### 5.6 Splits (details in spec 004)
 
-- Temporal: train M-2022-3..M-2022-6, val M-2022-7, in-distribution test M-2022-8, drift tests M-2022-9..M-2022-12 (monthly); weekly curves where weekly periods are exposed.
+- Temporal: train weeks 11 to 26, validate weeks 27 to 30, in-distribution test weeks 31 to 34, then drift-test week by week out to week 52 (an 18-week horizon, longer than the 8 to 10 weeks reported by the dataset authors and by CAPE-Net).
 - Open-set: 150 known / 30 unknown classes chosen by a fixed seed; unknown classes appear only in test.
 - Cross-dataset: TLS-Year22 to QUIC22; TLS-Year22 to ISCX-VPN (category level).
 - Preprocessing statistics fitted on train only; no IP, port, SNI or ASN features in the model input (shortcut prevention).
 
 ## 6. Kaggle training strategy (details in spec 015)
 
+Credentials are in place: `~/.kaggle/kaggle.json` for account `parthrchallawar`, CLI 2.2.4 installed and authenticating (checked 2026-09-17).
+
 Facts to re-verify in the Kaggle UI, since they change: 30 GPU-hours per week; a session runs at most 12 h; GPU options are a P100 (16 GB) or 2xT4 (2x16 GB); about 29 GB RAM in GPU sessions; 20 GB persisted output; private dataset quota 200 GB; internet in kernels requires a phone-verified account.
 
 Consequences:
 
-- Package data as **pre-tensorised int16/float16 NumPy shards** (PPI [N,30,4], flowstats [N,43], labels) in a private Kaggle dataset; a 10M-flow shard set is about 3 GB and loads fully into RAM. No DataLoader workers needed.
+- Package data as **pre-tensorised int16/float16 NumPy shards** (PPI [N,30,4], flowstats [N,43], labels); a 10M-flow shard set is about 3 GB and loads fully into RAM. No DataLoader workers needed.
+- Build those shards **in a Kaggle CPU session** from the mounted public mirror, and save them as that kernel's output dataset. CPU sessions do not consume the GPU quota, so preparation is free, nothing is uploaded from the laptop, and no kernel needs internet. Locally produced shards (the PCAP datasets, which have no mirror) still go up through the CLI.
 - Backbone at most 2M params, batch 4096 to 8192, AMP fp16, OneCycle LR: an SSL epoch over 10M flows is roughly 15 to 25 min on a T4; a supervised fine-tuning epoch roughly 10 min. A full SSL run (10 epochs) plus fine-tune fits in one 12 h session with margin.
 - Every job checkpoints each epoch to `/kaggle/working`, supports resume, and logs to a file-based MLflow store that is pulled into `results/`.
 - A weekly plan of 30 GPU-hours = 1 SSL run + 6 to 8 fine-tuning/ablation runs. Baselines (XGBoost, CNN, LSTM) run on CPU locally.
@@ -135,12 +139,14 @@ Consequences:
 
 ## 7. Technology decisions
 
-Kept from the synopsis: Python 3.11, PyTorch, scikit-learn, XGBoost, Scapy/PyShark, Pandas/NumPy, Matplotlib/Plotly, FastAPI, Streamlit, SQLite then PostgreSQL, MLflow, Docker.
+Kept from the synopsis: Python 3.11, PyTorch, scikit-learn, XGBoost, Scapy/PyShark, Pandas/NumPy, Matplotlib/Plotly, FastAPI, Streamlit, SQLite, MLflow.
+
+Descoped by owner decision on 2026-09-17: **Docker and containerised deployment** (spec 019 is deferred), and with it **PostgreSQL** (SQLite only, behind an engine-neutral data layer). Everything runs as local processes: uvicorn, `streamlit run`, an MLflow file store.
 
 Added, each with a reason:
 
 - `cesnet-datazoo` and `cesnet-models`: dataset API and the public pretrained baseline.
-- **ipfixprobe** (CESNET's exporter, Docker): produces the *identical* PPI features from PCAP and live capture, so our pipeline matches the primary dataset bit-for-bit. **NFStream** as a Python alternative; a pure-Python `dpkt` flow builder as the Windows fallback and for tests.
+- A pure-Python `dpkt` flow builder as the **default** PCAP/live backend (works on Windows, no external dependency), with **NFStream** and CESNET's **ipfixprobe** as optional cross-checks where a Linux environment exists. Parity is enforced against the documented PPI definition rather than against a tool we may not run.
 - **ONNX Runtime**: CPU latency benchmarks and the serving path.
 - `pytest`, `ruff`, `pre-commit`: quality.
 - OmegaConf YAML configs: reproducibility without Hydra's complexity.
@@ -149,12 +155,14 @@ Rejected: Mamba/state-space kernels (hardware dependency, no gain at 30 tokens),
 
 ## 8. Roadmap (aligns with the guide's four phases)
 
+The spec-by-spec build order, verified against every declared dependency, is in [`specs/README.md`](../specs/README.md).
+
 | Phase | Weeks | Deliverable |
 |---|---|---|
 | 1 Data | 1 to 3 | DataZoo loading, tensor shards on Kaggle, PCAP pipeline with feature-parity tests, evaluation harness skeleton (specs 001 to 004) |
-| 2 Baselines | 4 to 6 | XGBoost, CNN, GRU/LSTM, 30pktTCNET, fixed-K Transformer; accuracy-vs-K curves (specs 005, 006) |
-| 3 Core research | 7 to 11 | SSL pretraining (007), prefix supervision (008), stopping policy (009), unknown detection (010), drift + open-set evaluation |
-| 4 Control + system | 12 to 14 | Budget controller (011), drift monitoring (012), efficiency benchmarks (013), FastAPI + dashboard + DB + Docker (016 to 019) |
+| 2 Baselines | 4 to 6 | Experiment tracking and the Kaggle pipeline first (014, 015), then XGBoost, CNN, GRU/LSTM, 30pktTCNET and the fixed-K Transformer; accuracy-vs-K curves (005, 006) |
+| 3 Core research | 7 to 11 | SSL pretraining (007), prefix supervision (008), unknown detection (010), then the stopping policy (009) that consumes it, drift + open-set evaluation |
+| 4 Control + system | 12 to 14 | Budget controller (011), drift monitoring (012), efficiency benchmarks (013), FastAPI + dashboard + SQLite (016 to 018) |
 | 5 Paper | 15 to 16 | Ablations, statistics over seeds, report and paper draft |
 
 ## 9. Risks

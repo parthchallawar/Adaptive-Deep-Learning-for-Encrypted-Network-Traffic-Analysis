@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 12 of 18 (after 010)
 - **Depends on:** 006, 008, 010. **Used by:** 011, 016. **Research contribution:** C2 (hypothesis H2, part of H3).
 
 ## Problem

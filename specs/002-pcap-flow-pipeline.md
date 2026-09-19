@@ -1,8 +1,9 @@
 # Spec 002: PCAP and Live Capture to Flows to PPI
 
-- **Status:** draft
+- **Status:** partially implemented (pcap path built and tested; live capture and the optional backends pending)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 2 of 18
 - **Depends on:** 001. **Used by:** 003, 016, 017.
 
 ## Problem
@@ -12,10 +13,10 @@ The system must accept PCAP files or live traffic and turn them into the same pe
 ## Goals
 
 - Feature parity with CESNET's `ipfixprobe` PPI definition: first 30 **payload-carrying** packets, direction relative to the flow initiator, IPT in milliseconds (integer, first packet 0), size = L4 payload bytes, TCP PSH flag.
-- Three interchangeable backends behind one interface:
-  1. `ipfixprobe` (Docker, Linux): reference backend, bit-exact with D1.
-  2. NFStream (`splt_analysis=30`, Linux/macOS): fast Python alternative.
-  3. Pure-Python `dpkt` flow builder: Windows fallback, unit-testable, slow.
+- Three interchangeable backends behind one interface. Since containerised deployment is deferred (spec 019) and the development machine is Windows, the **pure-Python backend is the default** and the others are optional accelerators:
+  1. **Pure-Python `dpkt` flow builder (default):** runs on Windows, unit-testable, no external dependency. Slow but sufficient for the PCAP datasets and the live demo.
+  2. NFStream (`splt_analysis=30`, Linux/macOS/WSL2): faster alternative when available.
+  3. `ipfixprobe` (Linux, needs a build or a container): the reference implementation CESNET used to produce D1. **Optional.** It is not required to reach any success criterion; feature parity is instead enforced against the *documented PPI definition* and against D1's own distributions (see Testing).
 - Streaming mode for live capture: emit a PPI update per packet so that the anytime model can decide before the flow ends.
 - Session-level metadata kept out of the model input but kept for grouping (spec 004 leakage rules).
 
@@ -36,7 +37,7 @@ The system must accept PCAP files or live traffic and turn them into the same pe
 
 - Only packets with L4 payload length > 0 (excludes pure ACKs, SYN, FIN without data), matching CESNET's PPI definition ("TCP payload only, excludes zero-payload ACK packets").
 - Stop recording after 30 payload packets; the flow keeps being tracked for flow statistics.
-- IPT for packet i = timestamp_i minus timestamp_{i-1} of the previous *recorded* packet, in ms, clipped to [0, 65535] to fit int16-compatible storage (DataZoo clips IPT similarly).
+- IPT for packet i = timestamp_i minus timestamp_{i-1} of the previous *recorded* packet, in ms, clipped to [0, 32767] to fit the *signed* int16 storage shared with the direction channel (DataZoo clips IPT similarly, but to 65535, since its IPT column is unsigned and separate from direction; ours are not, so our ceiling is half of that — see `ppi.py:IPT_MAX_MS`).
 - Size = payload bytes, clipped to [0, 1500] (jumbo frames are rare and clipped).
 - PUSH flag: TCP PSH bit for TCP, 0 for UDP.
 
@@ -55,9 +56,9 @@ FlowRecord = {flow_id, key, start_ts, label_hint, ppi: int16[30,4], ppi_len, flo
 PacketEvent = {flow_id, k, ipt, dir, size, push, ts}      # k = index within PPI (1..30)
 ```
 
-- `IpfixprobeSource`: runs `ipfixprobe -i "pcap;file=<f>" -p pstats -p basicplus -o "text;..."` inside the `docker/ipfixprobe` image; parses its CSV. Used to *generate* D3/D4 shards.
-- `NFStreamSource`: `NFStreamer(source=f, splt_analysis=30, statistical_analysis=True, idle_timeout=..., active_timeout=...)`; converts `splt_*` arrays to PPI (note NFStream direction encoding 0/1 is mapped to +1/-1 and NFStream includes zero-payload packets unless filtered; we filter by `splt_ps > 0`... see edge cases).
-- `DpktSource`: minimal reassembly-free parser: Ethernet/IP/IPv6/TCP/UDP headers only, no payload copy; handles VLAN tags; ignores fragments beyond the first.
+- `DpktSource` (default): minimal reassembly-free parser: Ethernet/IP/IPv6/TCP/UDP headers only, no payload copy; handles VLAN tags; ignores fragments beyond the first. Generates the D3/D4 shards.
+- `NFStreamSource` (optional): `NFStreamer(source=f, splt_analysis=30, statistical_analysis=True, idle_timeout=..., active_timeout=...)`; converts `splt_*` arrays to PPI (NFStream's 0/1 direction encoding is mapped to +1/-1, and NFStream includes zero-payload packets unless filtered; we filter by `splt_ps > 0`, see edge cases).
+- `IpfixprobeSource` (optional): runs `ipfixprobe -i "pcap;file=<f>" -p pstats -p basicplus -o "text;..."` and parses its CSV. Used only as a cross-check of the default backend when a Linux environment is available.
 
 ### Labelling PCAP datasets
 
@@ -87,14 +88,14 @@ PacketEvent = {flow_id, k, ipt, dir, size, push, ts}      # k = index within PPI
 
 ## Performance considerations
 
-- ipfixprobe processes tens of thousands of packets per second per core from pcap; the 28 GB ISCX set is a few hours in Docker.
+- ipfixprobe, where available, processes tens of thousands of packets per second per core from pcap, so the 28 GB ISCX set is a few hours.
 - dpkt backend is about 50k to 150k packets/s; acceptable for tests and small captures only.
 - Streaming path target: under 1 ms per PacketEvent end-to-end into the model (measured in spec 013).
 
 ## Testing
 
-- **Parity test (mandatory):** a synthetic pcap generated with Scapy (known sizes, directions, gaps, PSH flags, one retransmission, one pure ACK) must produce identical PPI from all three backends; expected arrays are hand-written in the test.
-- **Golden test against D1:** not possible directly (no raw pcaps), but a tiny public pcap with a known ipfixprobe output is committed under `tests/fixtures/` to guard against parser regressions.
+- **Parity test (mandatory):** a synthetic pcap generated with Scapy (known sizes, directions, gaps, PSH flags, one retransmission, one pure ACK) must produce identical PPI from every *available* backend; the expected arrays are hand-written in the test, so the default backend is validated even when the optional ones are not installed. Optional backends are skipped with a reason, never silently.
+- **Distribution test against D1 (replaces the unavailable golden test):** D1 ships no raw pcaps, so instead the pipeline's outputs on ISCX are compared to D1's marginal distributions (packet-size histogram, IPT histogram, direction ratio, PPI-length distribution) and must fall in plausible ranges; gross parser bugs (off-by-one on direction, milliseconds vs microseconds, counting ACKs) shift these visibly. Documented in `docs/testing.md` as a smoke check, not a strict assertion.
 - Property tests: padding mask equals `ppi_len`; IPT[0] == 0; direction of first packet == +1; sizes > 0 for recorded packets.
 - Live smoke test (manual): capture 60 s of browsing, confirm flows appear in the dashboard with growing K.
 
@@ -102,15 +103,15 @@ PacketEvent = {flow_id, k, ipt, dir, size, push, ts}      # k = index within PPI
 
 - Spec 003 defines the shard schema and normalisation (this spec writes raw integers only).
 - Spec 016 consumes `PacketEvent`s.
-- Spec 019 builds the ipfixprobe Docker image.
+- Spec 019 (deferred) would package the optional ipfixprobe backend.
 
 ## Success criteria
 
-- Parity test passes on all backends.
+- Parity test passes on every installed backend, with the pure-Python one always exercised.
 - ISCX and USTC shards produced with per-file session ids and audit parquet.
 - Live demo shows a first decision within the first 10 payload packets of a browsing flow.
 
 ## Open questions
 
-- Owner's development OS is Windows 11: confirm WSL2 or Docker Desktop is acceptable for ipfixprobe/NFStream. Default: Docker Desktop.
 - Timeout values: adopt ipfixprobe defaults or CESNET's production settings (documented in the Year22 paper)? Default: the paper's settings, recorded in `configs/data/pcap.yaml`.
+- Whether the pure-Python backend is fast enough for the full 28 GB ISCX set on the owner's laptop, or whether a subset is used for development (measure first; a subset is acceptable, spec 001 has a `--files` flag).

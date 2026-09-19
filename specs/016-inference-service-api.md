@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 17 of 18
 - **Depends on:** 002, 003, 006, 009, 010, 011, 012, 014, 018. **Used by:** 017, 019.
 
 ## Problem
@@ -39,9 +40,9 @@ Decision event schema is the same dataclass used by the offline replay (spec 009
 
 ## Design
 
-- **Process model:** FastAPI + uvicorn (one worker); a capture thread produces `PacketEvent`s into an asyncio queue; an inference loop drains the queue every 5 ms or 64 events, groups events by flow, runs `PATStream.step` batched (pad to max k), applies the policy and the controller, persists decisions, and broadcasts to WebSocket clients.
+- **Process model:** FastAPI + uvicorn run directly (`uvicorn adl_etc.service.app:app`), one worker, no container (spec 019 deferred); a capture thread produces `PacketEvent`s into an asyncio queue; an inference loop drains the queue every 5 ms or 64 events, groups events by flow, runs `PATStream.step` batched (pad to max k), applies the policy and the controller, persists decisions, and broadcasts to WebSocket clients.
 - **Flow state:** dict `flow_id → {kv_cache, k, last_ts, scores}`; evicted on decision or after 60 s idle; capped at 50k concurrent flows (LRU) with a dropped-flows counter.
-- **Model loading:** from the MLflow registry stage (`production`) or a local path; ONNX Runtime full-forward for `/score/flow`, TorchScript/eager `PATStream` for streaming (ONNX with explicit cache I/O if the export works; measured in spec 013).
+- **Model loading:** from a local checkpoint path by default (`results/models/production.json`), or from the MLflow registry stage when a tracking server happens to be running (spec 014); ONNX Runtime full-forward for `/score/flow`, TorchScript/eager `PATStream` for streaming (ONNX with explicit cache I/O if the export works; measured in spec 013).
 - **Controller and monitor:** singletons updated on every decision; state persisted to the DB every window.
 - **Persistence:** spec 018 tables via SQLAlchemy; writes batched.
 - **Config:** `configs/service.yaml` (model stage, thresholds initial values, capture backend, DB URL).

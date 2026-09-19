@@ -1,8 +1,9 @@
 # Spec 003: Feature Representation and Preprocessing
 
-- **Status:** draft
+- **Status:** partially implemented (PPI schema and flow statistics built; shard writer and tokeniser pending)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 3 of 18
 - **Depends on:** 001, 002. **Used by:** 005 to 011, 015, 016.
 
 ## Problem
@@ -44,9 +45,9 @@ Size check: 10M flows x (240 + 1 + 172 + 2 + 1 + 4 + 8) bytes ≈ 4.3 GB; fits K
 Each packet k becomes a sum of embeddings:
 
 - `size_bin`: 64 log-spaced bins over [1, 1500] plus a bin for 0 (padding). Log spacing follows the observation (ECHO, 2024) that non-uniform bins are more efficient than uniform ones.
-- `ipt_bin`: 32 log-spaced bins over [0, 65535] ms plus padding bin.
+- `ipt_bin`: 32 log-spaced bins over [0, 32767] ms plus padding bin (32767, not DataZoo's 65535: our IPT shares a signed int16 array with direction, see spec 002).
 - `dir`: 3 values {pad, +1, -1}.
-- `push`: 2 values.
+- `push`: 3 values {pad, 0, 1} (not 2: a real packet with push=0 must not collide with the padding index, since both are 0 in the raw array).
 - `pos`: learned positional embedding for k in 1..30.
 - Optional continuous side channel: `[log1p(size)/7.3, log1p(ipt)/11.1, dir]` projected linearly and added (ablation flag `continuous_side=true`).
 
@@ -90,12 +91,12 @@ Augmentations act on raw integer PPI before binning so that they are backend-ind
 ## Inputs and outputs
 
 - Inputs: DataZoo dataframes (001) or `FlowRecord`s (002).
-- Outputs: shards + `stats.json` under `data/processed/<dataset>/<period>/`; a `Dataset` class returning `(tokens[30,4] int64, cont[30,3] float32, mask[30] bool, flowstats[43] float32, label, ppi_len)`.
+- Outputs: shards + `stats.json` under `data/processed/<dataset>/<period>/`; a `Dataset` class returning `(tokens[30,4] int64, cont[30,4] float32, mask[30] bool, flowstats[FLOWSTATS_DIM] float32, label, ppi_len)`.
 
 ## Edge cases
 
 - Flows with `ppi_len == 0` (no payload packets): dropped at export and counted; they cannot be classified by definition.
-- Sizes > 1500 or IPT > 65535: clipped; counters kept in `meta.json`.
+- Sizes > 1500 or IPT > 32767: clipped; counters kept in `meta.json`.
 - Labels missing in a period (class absent): allowed; per-class metrics report support.
 - Unknown classes (label −1) must never appear in train shards; export asserts this.
 
@@ -116,7 +117,7 @@ Augmentations act on raw integer PPI before binning so that they are backend-ind
 
 ## Success criteria
 
-- Shards for D1 (periods M-2022-3..12) and D2 (4 weeks) produced with stats; total < 12 GB on disk.
+- Shards for D1 (weeks 11 to 52, one shard set per week) and D2 (4 weeks) produced with stats; total < 12 GB on disk.
 - All tests pass; feature count documented in `meta.json` matches model configs.
 
 ## Open questions

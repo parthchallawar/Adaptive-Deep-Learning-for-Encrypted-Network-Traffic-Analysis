@@ -3,6 +3,7 @@
 - **Status:** draft
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
+- **Build step:** step 5 of 18 (moved ahead of 005: the first trained model must be tracked, or every baseline is rerun)
 - **Depends on:** none. **Used by:** all training and evaluation specs; 015.
 
 ## Problem
@@ -12,13 +13,13 @@ The project will produce dozens of runs across two machines (laptop CPU, Kaggle 
 ## Goals
 
 - Every run fully described by one YAML config plus a git commit; every result traceable to both.
-- MLflow as the single registry of runs, metrics, artefacts and model versions, working offline (file store) on Kaggle and locally, merged into one store.
+- MLflow as the single registry of runs, metrics, artefacts and model versions, working offline (file store) on Kaggle and locally, merged into one store. No server process is required (deployment is deferred, spec 019): a local file store plus the `mlflow ui` command when browsing is wanted.
 - Deterministic training where feasible; documented nondeterminism otherwise.
 - `results/summaries/` regenerated from MLflow by scripts, never edited by hand.
 
 ## Non-goals
 
-- A hosted MLflow server with authentication (a local server in Docker is enough); hyperparameter-optimisation frameworks.
+- A hosted or containerised MLflow server; hyperparameter-optimisation frameworks.
 
 ## Design
 
@@ -33,10 +34,10 @@ The project will produce dozens of runs across two machines (laptop CPU, Kaggle 
 
 ### MLflow
 
-- Local: `mlflow server --backend-store-uri sqlite:///results/mlflow.db --artifacts-destination results/mlruns` in Docker (spec 019).
+- Local: file store at `results/mlruns` (`MLFLOW_TRACKING_URI=file:///.../results/mlruns`), browsed on demand with `mlflow ui --backend-store-uri file:results/mlruns`. A SQLite-backed tracking server is optional and only needed if the model registry API is used; if so, run `mlflow server --backend-store-uri sqlite:///results/mlflow.db --artifacts-destination results/mlruns` as a plain local process.
 - Kaggle: `MLFLOW_TRACKING_URI=file:///kaggle/working/mlruns`; the run directory is pulled with `kaggle kernels output` and imported with `scripts/mlflow_import.py` (copies run folders and rewrites artifact URIs).
 - Logged: params (flattened config), per-epoch metrics, final report JSON (spec 004), figures, checkpoint path, efficiency JSON (spec 013), dataset manifest hashes (spec 001).
-- Model registry: `AnytimeETC-PAT` with stages `candidate`, `staging`, `production`; the service (spec 016) loads by stage name.
+- Model registry: `AnytimeETC-PAT` with stages `candidate`, `staging`, `production`; the service (spec 016) loads by stage name when a tracking server is running, and otherwise from a plain checkpoint path recorded in `results/models/production.json`. The service must work without MLflow running.
 
 ### Seeds and determinism
 
