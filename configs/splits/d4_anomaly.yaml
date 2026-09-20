@@ -1,0 +1,13 @@
+# D4 USTC-TFC2016, used only as an anomaly-detection test corpus (spec 004):
+# a model trained on D1 (or D3 benign) must flag D4's malware flows as
+# unknown/anomalous. Not a train/val/test split at all -- D4 contributes no
+# training data of its own -- so there is exactly one split, "test", scored
+# with the shard's own `category` column (benign=0, malware=1, plan T4) as
+# the open-set ground truth. This is the one split config with real data
+# behind it right now: data/processed/ustc-tfc2016/all (403,394 real flows).
+dataset: ustc-tfc2016
+temporal: false
+
+splits:
+  test:
+    periods: [all]

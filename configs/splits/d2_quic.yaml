@@ -1,0 +1,23 @@
+# D2 CESNET-QUIC22 split (spec 004): train/val/test/drift, one week each.
+#
+# Not downloaded or exported at all yet -- D2 acquisition and its own T5a-style
+# schema probe (the QUIC column layout has not been verified against a real
+# file the way D1's was) are both future work, out of scope for plan T6.
+# This config records spec 004's target periods so the split boundaries are
+# fixed and reviewable now, ahead of the data.
+dataset: cesnet-quic22
+temporal: true
+
+splits:
+  train:
+    periods: [W-2022-44]
+    standardizer: null
+  val:
+    periods: [W-2022-45]
+    standardizer: null
+  test:
+    periods: [W-2022-46]
+    standardizer: null
+  test_drift:
+    periods: [W-2022-47]
+    standardizer: null

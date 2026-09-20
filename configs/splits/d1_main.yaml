@@ -1,0 +1,71 @@
+# D1 CESNET-TLS-Year22 main split (spec 004).
+#
+# Periods are the mirror's own WEEK-2022-NN folder names (plan T5), each an
+# independently exported shard set under data/processed/cesnet-tls-year22/.
+# Weeks 1-10 are excluded (the documented week-10 exporter artefact, spec 004).
+#
+# Only WEEK-2022-00 has been exported for real so far (plan T5's schema
+# probe); the rest of this range is not on disk yet -- protocol.load_split
+# will raise FileNotFoundError against it until the weeks 11-52 corpus is
+# exported (a Kaggle-kernel job, per spec 001's Path B decision), exactly
+# like configs/data/pcap.yaml described D3's real layout before D3 was
+# unblocked. The split boundaries themselves are not a placeholder -- they
+# are spec 004's actual numbers.
+dataset: cesnet-tls-year22
+temporal: true
+
+splits:
+  train:
+    periods:
+      - WEEK-2022-11
+      - WEEK-2022-12
+      - WEEK-2022-13
+      - WEEK-2022-14
+      - WEEK-2022-15
+      - WEEK-2022-16
+      - WEEK-2022-17
+      - WEEK-2022-18
+      - WEEK-2022-19
+      - WEEK-2022-20
+      - WEEK-2022-21
+      - WEEK-2022-22
+      - WEEK-2022-23
+      - WEEK-2022-24
+      - WEEK-2022-25
+      - WEEK-2022-26
+    standardizer: null # results/standardizer.json once fit (spec 003)
+  val:
+    periods:
+      - WEEK-2022-27
+      - WEEK-2022-28
+      - WEEK-2022-29
+      - WEEK-2022-30
+    standardizer: null
+  test_id:
+    periods:
+      - WEEK-2022-31
+      - WEEK-2022-32
+      - WEEK-2022-33
+      - WEEK-2022-34
+    standardizer: null
+  test_drift:
+    periods:
+      - WEEK-2022-35
+      - WEEK-2022-36
+      - WEEK-2022-37
+      - WEEK-2022-38
+      - WEEK-2022-39
+      - WEEK-2022-40
+      - WEEK-2022-41
+      - WEEK-2022-42
+      - WEEK-2022-43
+      - WEEK-2022-44
+      - WEEK-2022-45
+      - WEEK-2022-46
+      - WEEK-2022-47
+      - WEEK-2022-48
+      - WEEK-2022-49
+      - WEEK-2022-50
+      - WEEK-2022-51
+      - WEEK-2022-52
+    standardizer: null
