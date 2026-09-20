@@ -1,7 +1,7 @@
 # Plan: Phase 1, the data pipeline
 
 - **Specs:** [001](../specs/001-datasets-and-acquisition.md), [002](../specs/002-pcap-flow-pipeline.md), [003](../specs/003-feature-representation-and-preprocessing.md), [004](../specs/004-splits-and-evaluation-protocol.md) (build steps 1 to 4)
-- **Status:** in-progress (9 of 14 items done)
+- **Status:** in-progress (10 of 14 items done)
 - **Exit gate:** phase 2 (specs 014, 015, 005) cannot start until [Exit criteria](#exit-criteria) are all green.
 
 ## Approach
@@ -29,7 +29,9 @@ Done and under test (19 tests, `ruff` clean):
 - [x] **[`data/features.py`](../src/adl_etc/data/features.py) (T2).** Tokeniser, continuous view, prefix/mask, `Standardizer`, five augmentations, `StreamTensorizer`. 41 tests, including the stream/offline equivalence invariant (spec 020 #5) and frozen bin-edge drift detection.
 - [x] **[`data/download.py`](../src/adl_etc/data/download.py), [`manifest.py`](../src/adl_etc/data/manifest.py), [`ustc_download.py`](../src/adl_etc/data/ustc_download.py), [`iscx_download.py`](../src/adl_etc/data/iscx_download.py), [`iscx_labels.py`](../src/adl_etc/data/iscx_labels.py) (T3).** Resumable/retrying downloader engine, dataset manifest, and both D3/D4 acquisition pipelines. USTC (D4) verified against the live GitHub API (`--dry-run` lists all 20 real classes, 387 MB); the bulk download itself has not been run yet, pending the note in this task's log. 63 new tests (full suite 223/223).
 
-Remaining: tasks **T4 to T8** below.
+- [x] **[`data/export_pcap.py`](../src/adl_etc/data/export_pcap.py), [`configs/data/pcap.yaml`](../configs/data/pcap.yaml) (T4).** Joins `pcap_source` → `flows` → `tensors`. D4 fully exported for real: 403,394 flows, 24 files, 187 MB on disk, 4.8 minutes. D3 blocked on registration (spec 001); throughput measured on real D4 captures instead and used to make the subset-gate call anyway. Found and fixed a real performance bug along the way (`FlowBuilder._expire()`'s per-packet O(open flows) scan, 34% of wall time) — see the plan's progress log. 14 new tests (full suite 237/237).
+
+Remaining: tasks **T5 to T8** below.
 
 ## Scope decisions
 
@@ -277,13 +279,20 @@ python scripts/export_pcap.py --dataset iscx-vpn-2016 \
 
 **Throughput gate:** measure on one ISCX capture. If the extrapolated full-set time exceeds **60 minutes**, switch D3 to a per-class subset and record the decision in the dataset card. Either outcome is acceptable; an unmeasured guess is not.
 
+**Measured (not estimated), plan T4, 2026-09-20:** no ISCX capture exists yet (spec 001's registration gate), so the measurement ran on real D4 captures instead — the same `dpkt` backend, same `FlowBuilder`, real production-scale files, which is at least as representative as a hypothetical ISCX number would have been. First measurement (94 MB `Neris.pcap`): 79.5 s, 1.2 MB/s, 6,248 pkt/s. Profiling that run found `FlowBuilder._expire()` — an O(open flows) scan run on *every single packet* — consuming 34% of total wall time, ahead of all `dpkt` parsing combined. Fixed: the per-packet check now only re-examines the one flow the current packet actually belongs to (still exact, still checked on every packet); the sweep over every *other* open flow is throttled to `min(all four timeouts)/4` of capture time instead of running unconditionally. Re-measured after the fix: 54.4 s, 1.7 MB/s, 9,132 pkt/s — a 46% reduction, same output (identical flow/drop counts, confirming the fix changed nothing but speed). Extrapolated to ISCX's 28 GB: **~281 minutes, still far past the 60-minute gate.** D3 will be exported as a per-class subset once unblocked (spec 001 updated with this result, overriding its earlier "export all pcaps, disk allows it" default, which reasoned about disk space but never about time).
+
+A subtlety the throttling had to get right, and a regression test locks in: a packet reusing the exact same 5-tuple as a flow that has *individually* timed out (but that the throttled sweep hasn't reached yet, because other flows' traffic has kept the sweep fresh) must still start a new flow, never get silently merged into the stale one. `test_key_reuse_is_caught_even_when_sweep_is_throttled` constructs exactly that interleaving and was confirmed to fail (0 expired instead of 1) when the per-packet check is removed, via a deliberate mutation — not just reasoned about, checked.
+
 **Tests**
 
 - End-to-end on `tests/conftest.py`'s reference pcap: the exported shard's `ppi` equals `EXPECTED_PPI` from `test_flows.py`, proving the export path does not alter what the flow builder produced.
 - Two capture files produce two distinct `session_id`s and no shared flows.
 - `flows.parquet` row count equals the shard row count, and `key_hash` is never a readable address.
+- Unlabeled files (absent from `labels.csv`, or present with an empty `class_name` — the ISCX heuristic-label case) are skipped and counted, never silently assigned a fake label.
+- `PcapConfig.load()` round-trips the real `configs/data/pcap.yaml`; an unknown config key raises rather than being silently ignored.
+- `FlowBuilder`'s throttled-sweep correctness (above), plus the pre-existing UDP-vs-TCP idle timeout tests, live in `test_flows.py` since they're properties of `FlowBuilder` itself, not of the export path.
 
-**Done when:** D4 (3.7 GB) is fully exported, D3 is exported at whatever volume the throughput gate allows, and the reference-pcap test passes.
+**Done when:** D4 (3.7 GB) is fully exported (**done** — 403,394 flows, 187 MB of shards, 4.8 minutes; see the plan's progress log), D3 is exported at whatever volume the throughput gate allows (**blocked** on spec 001's registration gate — code is ready, nothing left to build), and the reference-pcap test passes (**done** — 14 new tests, 11 in `test_export_pcap.py` and 3 in `test_flows.py` for the UDP timeout and throttled-sweep work, all passing).
 
 ---
 
@@ -457,3 +466,10 @@ What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not re
 
   One open item carried forward: the bulk USTC/ISCX downloads themselves have not been run (D4 is ~387 MB compressed / ~3.7 GB extracted; D3 additionally needs the user's one-time registration first). `data/manifest.json` does not exist yet as a result — it is created by `register()` on first real run, not pre-seeded.
 - **2026-09-20.** D4's real download run: 24 pcap files (20 classes — SMB and Weibo's archives each held several numbered files, exactly the multi-file shape `extract_7z` was built to handle), 3.8 GB on disk, matching spec 001's "3.7 GB pcap". `data/manifest.json` created; `M.verify("ustc-tfc2016")` is `True` (every file's hash matches what was recorded at download time). Full suite still 223/223 afterward. D3 remains blocked on the user's one-time registration (see above); D4's exit-criterion item is done.
+- **2026-09-20.** T4 done: `data/export_pcap.py` (`PcapConfig`, `export_dataset`, `ExportSummary`) plus `configs/data/pcap.yaml`. Also added `udp_idle_timeout` to `FlowBuilder`, a real gap (not just a doc gap): spec 002 always documented UDP/QUIC as needing its own idle timeout, but the constructor only ever accepted one timeout applied to every protocol. 14 new tests, full suite 237/237.
+
+  The throughput gate produced a genuine finding, not a rubber-stamped measurement. First pass (94 MB real D4 capture): 79.5 s, 1.2 MB/s. Profiling it found `FlowBuilder._expire()` — an O(open flows) scan run on every single packet — was 34% of total wall time, ahead of all `dpkt` parsing combined. Root cause: only the one flow a packet actually belongs to needs an up-to-the-packet answer; every other open flow was being needlessly re-checked every packet regardless of whether anything about it could have changed. Fixed by keeping the per-packet check for that one flow exactly as before, and throttling the sweep over every *other* flow to `min(all four timeouts)/4` of capture time. Re-measured: 54.4 s, 1.7 MB/s — 46% faster, byte-for-byte identical flow output (same counts, confirming the fix changed only speed). A regression test (`test_key_reuse_is_caught_even_when_sweep_is_throttled`) was written for the one correctness risk this kind of throttling can introduce — a same-key reuse landing in the gap between sweeps — and confirmed to actually fail (0 expired instead of 1) when the per-packet check is deliberately removed, via mutation, not just reasoned about.
+
+  Extrapolated to ISCX's 28 GB even after the fix: ~281 minutes, still far past the 60-minute gate. Spec 001's open question ("ISCX subset size... default: all pcaps, since disk allows it") is corrected — that reasoning only ever considered disk space, never time. D3 will be a per-class subset once unblocked.
+
+  D4's full corpus then exported for real with the fixed code: all 24 files, 403,394 flows (232,348 dropped for zero PPI — mostly MySQL/FTP/SMB's control-heavy traffic), 187 MB of shards, in 4.8 minutes (18,875 pkt/s, 13.7 MB/s aggregate — faster than the single-file measurement, since the fix helps proportionally more on files with fewer concurrent flows than the botnet capture used to measure it). Spot-checked: 24 distinct `session_id`s, `ppi_len` in [1, 30] with none at 0, label/category maps match spec 001's 20 classes and 2 categories exactly, `M.verify("ustc-tfc2016")` still `True`.

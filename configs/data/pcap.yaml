@@ -1,0 +1,17 @@
+# PCAP flow-builder settings (spec 002), loaded by scripts/export_pcap.py.
+#
+# These are the values currently hard-coded as FlowBuilder's defaults; this
+# file makes them configurable without changing the defaults. Timeouts follow
+# ipfixprobe's settings as used for the CESNET captures.
+
+inactive_timeout: 30.0 # seconds of silence before a TCP flow is exported
+active_timeout: 300.0 # maximum flow lifetime regardless of activity
+fin_linger: 5.0 # grace period after both sides FIN, for a trailing ACK/retransmission
+udp_idle_timeout: 60.0 # UDP/QUIC has no FIN/RST, so it gets its own (spec 002)
+k_max: 30 # PPI slots per flow (P.K_MAX)
+
+# Only "dpkt" is implemented (spec 002: pure-Python, the default since the dev
+# machine is Windows). NFStream and ipfixprobe are optional accelerators that
+# this project has deliberately not built — see plans/phase-1-data-pipeline.md's
+# "Scope decisions".
+backend: dpkt

@@ -131,5 +131,5 @@ ISCX ships no per-flow label column, so `scripts/download_iscx.py` infers each f
 ## Open questions
 
 - Whether to also pull D1 at size S (25M flows, 6.7 GB) for a final "scale" experiment near the end. Default: no.
-- ISCX subset size for the category-level transfer experiment (default: all pcaps, since disk allows it).
+- ~~ISCX subset size for the category-level transfer experiment (default: all pcaps, since disk allows it).~~ **Resolved (2026-09-20), overridden by a measurement, not disk space:** the pure-Python `dpkt` backend was measured at ~1.7 MB/s parsing real captures after fixing a real performance bug found during this measurement (spec 002, plan T4 — 94 MB in 54.4 s; `FlowBuilder` was re-scanning every open flow on every packet). Disk has room for all 28 GB, but time does not: extrapolated, that is still ~281 minutes, far past plan T4's 60-minute gate. D3 is exported as a per-class subset (spec 002's `--files` flag), not in full. Exact subset size to be fixed once D3 is unblocked (spec 001's registration gate) and the throughput number can be applied to the real file listing.
 - Whether the raw mirror's flows are the full population or a sample per day (the official release is already sampled; the `stats-*.json` files answer this during verification).
