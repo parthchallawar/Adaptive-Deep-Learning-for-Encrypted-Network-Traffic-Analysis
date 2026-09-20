@@ -1,0 +1,130 @@
+{
+  "ustc-tfc2016": {
+    "exporter_git_commit": "b9e18df929e3858f784f56542874f5c2016bf475",
+    "extracted_to": "data\\raw\\ustc-tfc2016\\pcap",
+    "files": [
+      {
+        "bytes": 7686388,
+        "name": "BitTorrent.pcap",
+        "sha256": "f4c4c59d460c6748110e6a0288c84a1362d7a3fa8a34b7a5cbe423de9e903deb"
+      },
+      {
+        "bytes": 63166447,
+        "name": "FTP.pcap",
+        "sha256": "bccef78f0aaf26c3288094511b84b87717afa148bcff9203565d6049c8f3537e"
+      },
+      {
+        "bytes": 2519073,
+        "name": "Facetime.pcap",
+        "sha256": "b142bd39de652584521c1e5c0fa6d35630b69b27692e187b2b2aa14426bc699e"
+      },
+      {
+        "bytes": 9497320,
+        "name": "Gmail.pcap",
+        "sha256": "6b10fa77c165de6d621842f9becb158d9630b0c913ddf6df2f943a839b142d17"
+      },
+      {
+        "bytes": 23450490,
+        "name": "MySQL.pcap",
+        "sha256": "fa5eda45d90a9c5835d9193d2708cac2a7380722be464bf961efe7b32f861b99"
+      },
+      {
+        "bytes": 11711492,
+        "name": "Outlook.pcap",
+        "sha256": "4b6e69fe3c43e5277576491097429cb84b742764c9a1bdf463f0ef6c3377300d"
+      },
+      {
+        "bytes": 1084219395,
+        "name": "SMB-1.pcap",
+        "sha256": "0431361cfc7137d858c481b3238819316d1deb4c67e9f555917dd68f3fe2da5a"
+      },
+      {
+        "bytes": 216832637,
+        "name": "SMB-2.pcap",
+        "sha256": "203f5ede474dacfc6da4cedb164128d5a8177bacf5b9f87e665318dc72de71fd"
+      },
+      {
+        "bytes": 4433982,
+        "name": "Skype.pcap",
+        "sha256": "30890a6c74f748d224b5fd1504bebc4e4103e5848d2fcb2acd4dc08ca3c2f761"
+      },
+      {
+        "bytes": 1083996681,
+        "name": "Weibo-1.pcap",
+        "sha256": "a4559c0d1b0deeb4d35a62e1f3c288d13987abf103e8dc35a4acfa1b25b9c9d1"
+      },
+      {
+        "bytes": 216805910,
+        "name": "Weibo-2.pcap",
+        "sha256": "1dc23c85337605541926637ae362ce38a7e4c63ab568beb0d6b90f851a03da0f"
+      },
+      {
+        "bytes": 216797927,
+        "name": "Weibo-3.pcap",
+        "sha256": "c348390e54f5047adc73960d5b648838e547033eaabfd362a24bedbed470e984"
+      },
+      {
+        "bytes": 216799881,
+        "name": "Weibo-4.pcap",
+        "sha256": "71e665e3d1d51e91181e91c1774bfad418e8a507c0e245f5e32d7711d27dd684"
+      },
+      {
+        "bytes": 15631895,
+        "name": "WorldOfWarcraft.pcap",
+        "sha256": "64eede78604b245f9ef842295dd5963884d2c39e1a04f90cd3c5ffadc552d06f"
+      },
+      {
+        "bytes": 99353677,
+        "name": "Cridex.pcap",
+        "sha256": "b5bfc716b7f875b8c4cd749874850c672b2b4f12b101b2016622a1cc0eb94da1"
+      },
+      {
+        "bytes": 30271627,
+        "name": "Geodo.pcap",
+        "sha256": "448fdf2fe393dce570a694bc70e0147c9c3a8877e9abd28ab306c401d6f200a4"
+      },
+      {
+        "bytes": 87674586,
+        "name": "Htbot.pcap",
+        "sha256": "cf6b9a726cd3dcb1518ffceb0568961ac0e813efa26bd6aaad0beadb0cf912c4"
+      },
+      {
+        "bytes": 17196739,
+        "name": "Miuref.pcap",
+        "sha256": "ec2476c9fb34a202b11d1138286143ad2cd7055fbc9401baf150b3d513c3d0ae"
+      },
+      {
+        "bytes": 94527961,
+        "name": "Neris.pcap",
+        "sha256": "a80f5e312cb9485096c4c759a5cc827cd5bd5d813b002392350635871b66dd3b"
+      },
+      {
+        "bytes": 294902378,
+        "name": "Nsis-ay.pcap",
+        "sha256": "4c66deefb4530435c0c90de186c9350fa8b1ab8c3b8e6606c493e971796eaa9c"
+      },
+      {
+        "bytes": 60753746,
+        "name": "Shifu.pcap",
+        "sha256": "c645adb19ecbba73f4b0596b1b877e49b1fe08b13670b98662cb68108dbcef44"
+      },
+      {
+        "bytes": 2680243,
+        "name": "Tinba.pcap",
+        "sha256": "fd893402b392188a4c2a79055776e03def1b7f3ac528397464b93fa848bf9670"
+      },
+      {
+        "bytes": 114572014,
+        "name": "Virut.pcap",
+        "sha256": "b04dfbdcb5735e64f64ea28ba801912c55395efca1c69ab0ac5c2672ebfd372a"
+      },
+      {
+        "bytes": 14094482,
+        "name": "Zeus.pcap",
+        "sha256": "d38e6cd7e9e063afe5696fd6a605350b57cc430ac21b32acbec7af70ec45d414"
+      }
+    ],
+    "retrieved": "2026-09-20T07:25:01Z",
+    "source_url": "https://github.com/davidyslu/USTC-TFC2016"
+  }
+}
