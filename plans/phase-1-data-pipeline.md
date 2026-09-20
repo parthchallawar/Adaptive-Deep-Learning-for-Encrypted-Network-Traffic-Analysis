@@ -1,7 +1,7 @@
 # Plan: Phase 1, the data pipeline
 
 - **Specs:** [001](../specs/001-datasets-and-acquisition.md), [002](../specs/002-pcap-flow-pipeline.md), [003](../specs/003-feature-representation-and-preprocessing.md), [004](../specs/004-splits-and-evaluation-protocol.md) (build steps 1 to 4)
-- **Status:** in-progress (8 of 14 items done)
+- **Status:** in-progress (9 of 14 items done)
 - **Exit gate:** phase 2 (specs 014, 015, 005) cannot start until [Exit criteria](#exit-criteria) are all green.
 
 ## Approach
@@ -27,8 +27,9 @@ Done and under test (19 tests, `ruff` clean):
 
 - [x] **[`data/tensors.py`](../src/adl_etc/data/tensors.py) (T1).** `ShardWriter`/`ShardSet`, mmap-backed, sharded `.npy` + `meta.json` + `flows.parquet`. 11 tests.
 - [x] **[`data/features.py`](../src/adl_etc/data/features.py) (T2).** Tokeniser, continuous view, prefix/mask, `Standardizer`, five augmentations, `StreamTensorizer`. 41 tests, including the stream/offline equivalence invariant (spec 020 #5) and frozen bin-edge drift detection.
+- [x] **[`data/download.py`](../src/adl_etc/data/download.py), [`manifest.py`](../src/adl_etc/data/manifest.py), [`ustc_download.py`](../src/adl_etc/data/ustc_download.py), [`iscx_download.py`](../src/adl_etc/data/iscx_download.py), [`iscx_labels.py`](../src/adl_etc/data/iscx_labels.py) (T3).** Resumable/retrying downloader engine, dataset manifest, and both D3/D4 acquisition pipelines. USTC (D4) verified against the live GitHub API (`--dry-run` lists all 20 real classes, 387 MB); the bulk download itself has not been run yet, pending the note in this task's log. 63 new tests (full suite 223/223).
 
-Remaining: tasks **T3 to T8** below.
+Remaining: tasks **T4 to T8** below.
 
 ## Scope decisions
 
@@ -241,13 +242,20 @@ class StreamTensorizer:
 
 USTC file names differ between mirrors, so labelling goes through `labels.csv` built from a directory walk, never from hard-coded names.
 
+**Real findings from building this (not assumptions):**
+
+- **D3 is registration-gated, not direct HTTP.** Confirmed by fetching `cicresearch.ca/CICDataset/ISCX-VPN-NonVPN-2016/` directly: it serves a form collecting name/email/institution/job title/country, not a file listing. This project does not automate that submission — see the correction in spec 001 and `iscx_download.py`'s module docstring for the reasoning. `download_iscx.py` accepts `--base-url` (the post-registration listing) or `--files-from` (a local URL list) and discovers `*.pcap` links generically from whichever page it's given.
+- **ISCX has no per-flow label column** (spec 001 already says "none usable" for time structure, and the same is true of any class label), so `iscx_labels.py` infers the 7x2 class from the file name using the dataset's documented category grouping. This is a tested but **unverified heuristic** — the real file list is behind the gate above — so every row carries `label_confidence="heuristic"` and an unrecognised name gets an empty `class_name` rather than a guess.
+- **USTC's `.7z` archives are not uniform.** Probed two real archives while building `extract_7z`: `Shifu.7z` holds one top-level file named after the class (`Shifu.pcap`); `SMB.7z` holds a subfolder with two numbered files (`SMB/SMB-1.pcap`, `SMB/SMB-2.pcap`). `extract_7z` handles both shapes generically (collect every matching member, flatten into the destination) rather than assuming either one. `py7zr` was added as a core dependency for this — about half of USTC's 20 classes are `.7z`-only.
+- **USTC verified live, not just against a fixture:** `python scripts/download_ustc.py --dry-run` lists all 20 real classes (10 benign, 10 malware) from the actual GitHub API, 387.1 MB compressed, matching spec 001's "10 benign + 10 malware" and roughly its "3.7 GB pcap" once decompressed.
+
 **Tests**
 
-- `tests/data/test_manifest.py`: every dataset named in `configs/data/*.yaml` has a manifest entry with a non-empty hash; `verify` detects a truncated file.
-- Downloader tests run against a local HTTP fixture (`http.server` on a temp dir) so resume, retry and hash-mismatch paths are covered without touching the network. Marked `integration`.
-- The real downloads are marked `slow` and are not run in CI.
+- `tests/data/test_manifest.py`: register/verify/require, including a truncated-file case that size alone would miss but the hash catches. (Deviates slightly from the original plan text, which anchored this to `configs/data/*.yaml`; no such config files exist yet at this point in the project, so the tests exercise the manifest API directly instead.)
+- `tests/data/test_download.py`, `test_ustc_download.py`, `test_iscx_download.py`: resume, retry-then-succeed, retry-exhaustion, non-retriable 4xx, GitHub-API listing, HTML link discovery, both 7z archive shapes, and the full `plan()`/`run()` pipeline for each dataset — all against the local `http_fixture` in `conftest.py`, not the network. Marked `integration`.
+- The real bulk downloads are not run in CI or by these tests; `--dry-run` against the live GitHub API (above) is the closest thing to an end-to-end check that ran here.
 
-**Done when:** `python scripts/download_all.py --datasets d3 d4 --dry-run` prints a correct plan, the real run completes, `data/manifest.json` validates, and `labels.csv` covers every extracted pcap.
+**Done when:** `python scripts/download_all.py --datasets d3 d4 --dry-run` prints a correct plan (done — verified against live GitHub API for d4; d3 correctly reports the registration requirement instead of a plan, which is the correct behaviour until the user has registered), the real run completes (open — see progress log), `data/manifest.json` validates, and `labels.csv` covers every extracted pcap.
 
 ---
 
@@ -415,6 +423,7 @@ Six inconsistencies (three anticipated while planning, three found while impleme
 | **Week-10 exporter artefact in D1.** | Silent distribution shift that is not the drift we mean to study. | Splits start at week 11 (spec 004); the card documents it; the split YAML excludes weeks 1 to 10 explicitly rather than by convention. |
 | **Bin edges drifting with a NumPy version.** | Every token in the project would move, invalidating saved checkpoints. | Edges frozen as literals with a test against the generator (T2). |
 | **`searchsorted` doesn't vectorise as well as it looks.** | `tokenize()` on 1M flows took 7.8 s with a straightforward `np.searchsorted` call — plausible-looking code that would have made every later epoch slower than it needed to be. | Both binned columns are bounded integers, so a precomputed lookup table (gather instead of per-element binary search) cut it to 3.1 s. Measured, not assumed: see the T2 progress log entry. |
+| **D3's class labels are a heuristic, not ground truth.** | Registration-gated, so the real file list can't be checked yet (see T3). A wrong app/activity mapping would silently mislabel a chunk of the D3 category-level transfer experiment, whose results spec 004 already calls "secondary" but which still needs to be *correctly* secondary, not silently wrong. | `label_confidence="heuristic"` on every row; unresolved names get an empty class rather than a guess; the downloader prints every unresolved name; re-verify against real files once registered, before D3 results are reported. |
 
 ## Exit criteria
 
@@ -441,3 +450,9 @@ What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not re
   - `padding_mask`'s `k` parameter controlled the returned array's *length* instead of acting as a *cutoff* on a fixed-30 mask, and `prefix()` additionally passed a hardcoded `k=P.K_MAX` regardless of the actual prefix — together these meant a prefix-truncated view reported no positions as masked at all. Both fixed; `padding_mask` now always returns `[N, K_MAX]`.
   - Performance: `tokenize()` on 1M synthetic flows measured 7.8 s with `np.searchsorted`; since both binned columns are bounded integers, replaced with a precomputed lookup table (O(1) gather), cutting it to 3.1 s — under the 5 s target this task set for itself.
   - The augmentation test for `drop()` originally asserted an approximate duration-conservation bound that was actually just wrong (dropping leading packets legitimately discards the leading gap, by the same convention that makes position 0's IPT always 0); replaced with an exact per-merge conservation check using uniquely-sized synthetic packets to unambiguously recover which positions survived.
+- **2026-09-20.** T3 done: `data/download.py` (resumable HTTP, GitHub contents API, generic 7z extraction), `data/manifest.py`, `data/ustc_download.py`, `data/iscx_download.py`, `data/iscx_labels.py`, and the three `scripts/download_*.py` CLIs. 63 new tests (full suite 223/223), ruff and mypy clean. `py7zr` added as a core dependency (justified in the risks table and in T3's findings above, not decorative). Three things researched and confirmed empirically rather than assumed, each changing the design:
+  - D3 (ISCX) turned out to be registration-gated (`insert.php` form collecting personal details), not the "direct HTTP from cicresearch.ca" spec 001 originally said — corrected in spec 001, with the reasoning for not automating the registration recorded there and in `iscx_download.py`'s docstring.
+  - USTC's `.7z` archives are not internally uniform (`Shifu.7z`: one top-level file; `SMB.7z`: a subfolder with two numbered files) — probed two real archives before writing `extract_7z`, which handles both shapes rather than assuming one.
+  - `download_ustc.py --dry-run` was run against the live GitHub API (not just the test fixture) and correctly listed all 20 real classes, 387.1 MB compressed — the closest thing to an end-to-end check available without spending the bandwidth on the full download.
+
+  One open item carried forward: the bulk USTC/ISCX downloads themselves have not been run (D4 is ~387 MB compressed / ~3.7 GB extracted; D3 additionally needs the user's one-time registration first). `data/manifest.json` does not exist yet as a result — it is created by `register()` on first real run, not pre-seeded.

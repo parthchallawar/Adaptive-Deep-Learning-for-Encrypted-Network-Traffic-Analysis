@@ -19,6 +19,9 @@ dependencies = [
     "pyarrow>=16.0",
     "omegaconf>=2.3",
     "tqdm>=4.66",
+    # Pure-Python 7z extraction: about a third of USTC-TFC2016's archives
+    # (spec 001, D4) ship only as .7z, with no system 7-Zip assumed on Windows.
+    "py7zr>=0.21",
 ]
 
 [project.optional-dependencies]

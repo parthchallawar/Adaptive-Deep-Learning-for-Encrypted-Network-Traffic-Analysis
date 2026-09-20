@@ -27,7 +27,7 @@ The project needs (a) a large, labeled, time-stamped corpus of encrypted flows w
 |---|---|---|---|---|---|---|
 | D1 | CESNET-TLS-Year22, size XS | primary: supervised, drift, open-set | 2.69 GB `.h5` (S: 6.7 GB; raw weekly CSV mirror: about 30 GB) | 180 apps, 24 categories | all of 2022; monthly periods in DataZoo, **weekly/daily in the raw CSV form** | `cesnet-datazoo` download (liberouter.org bucket), or the Kaggle mirror (see Acquisition paths) |
 | D2 | CESNET-QUIC22, size XS | cross-protocol transfer; SSL corpus; baseline parity with 30pktTCNET | 2.71 GB `.h5` | 102 apps + 3 background | 4 weeks (W-2022-44..47) | `cesnet-datazoo` |
-| D3 | ISCX VPN-nonVPN 2016 | PCAP pipeline validation; standard-benchmark comparability; category-level transfer | about 28 GB pcap (subset of files acceptable) | 14 (7 categories x VPN/non-VPN) | none usable | direct HTTP from cicresearch.ca |
+| D3 | ISCX VPN-nonVPN 2016 | PCAP pipeline validation; standard-benchmark comparability; category-level transfer | about 28 GB pcap (subset of files acceptable) | 14 (7 categories x VPN/non-VPN) | none usable | registration-gated (see below), not direct HTTP |
 | D4 | USTC-TFC2016 | "unusual traffic" anomaly experiment | 3.7 GB pcap | 10 benign + 10 malware | none | GitHub mirror (davidyslu/USTC-TFC2016) |
 | D5 | Self-captured demo traffic | dashboard demo only | < 1 GB | ad hoc | live | Npcap/Scapy or ipfixprobe |
 
@@ -81,6 +81,10 @@ A `--verify` mode implements the checks listed above (per-day counts against `st
 ### D3/D4 PCAPs
 
 `scripts/download_iscx.py` and `scripts/download_ustc.py` fetch the archives, verify sizes, extract into `data/raw/<dataset>/pcap/`, and write `labels.csv` mapping file name to class (ISCX and USTC label at file level). The PCAP pipeline (spec 002) turns them into PPI shards.
+
+**Correction (2026-09-20), D3 access:** the table above originally said "direct HTTP from cicresearch.ca". The actual page at `unb.ca/cic/datasets/vpn.html` links to `cicresearch.ca/CICDataset/ISCX-VPN-NonVPN-2016/`, which serves a registration form (`action="insert.php"`, collecting name/email/institution/job title/country) rather than a file listing — confirmed by fetching the page directly while building `download_iscx.py`, not assumed. This project does not automate that submission: it is the user's own personal information, and submitting it as if from an automated client rather than the actual registrant would misrepresent who is asking. `scripts/download_iscx.py` therefore requires a `--base-url` (the file-listing URL the user receives after registering in their own browser) or a `--files-from` list, and discovers `*.pcap` links generically from whatever page that turns out to be (`adl_etc.data.iscx_download.discover_files`). D4 (USTC-TFC2016, GitHub-hosted) needs no such step and is fully automated.
+
+ISCX ships no per-flow label column, so `scripts/download_iscx.py` infers each file's class (7 categories x VPN/non-VPN, spec 001's D3 row) from its file name via `adl_etc.data.iscx_labels`, using the dataset's documented category grouping plus the VPN-substring convention. This is a **documented heuristic**, written and tested against plausible file names reconstructed from the widely-cited ISCX naming convention, not verified against the real file listing (which is behind the registration gate above). Every row in `labels.csv` carries a `label_confidence` column (`"heuristic"`); a file the heuristic cannot classify gets an empty `class_name` rather than a guess, and the downloader prints every such file so a human reviews it once real files are in hand.
 
 ### Manifest
 

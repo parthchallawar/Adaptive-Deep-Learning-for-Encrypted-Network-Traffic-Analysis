@@ -7,8 +7,12 @@ expected PPI can be written out by hand in the test.
 
 from __future__ import annotations
 
+import http.server
+import json
 import socket
-from dataclasses import dataclass
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import dpkt
@@ -88,3 +92,96 @@ REFERENCE_PACKETS: list[Pkt] = [
 def reference_pcap(tmp_path: Path) -> Path:
     """A capture whose expected PPI is spelled out in ``test_flows``."""
     return write_pcap(tmp_path / "reference.pcap", REFERENCE_PACKETS)
+
+
+# --- local HTTP fixture (specs 001, 020) ------------------------------------
+#
+# Shared by every downloader test (test_download.py, test_ustc_download.py,
+# test_iscx_download.py): a minimal HTTP server that can serve plain files
+# (with Range support for resume), inject N failures before succeeding (for
+# retry), and serve canned JSON (to stand in for GitHub's contents API).
+# Runs on loopback only, so it's fast and needs no network access.
+
+
+@dataclass
+class HttpFixtureState:
+    files: dict[str, bytes] = field(default_factory=dict)
+    fail_count: dict[str, int] = field(default_factory=dict)
+    json_routes: dict[str, object] = field(default_factory=dict)
+    request_log: list[str] = field(default_factory=list)
+
+
+class _FixtureHandler(http.server.BaseHTTPRequestHandler):
+    state: HttpFixtureState
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+    def handle_one_request(self) -> None:
+        # A retry test's client can abandon a connection (e.g. after reading
+        # a 500 and opening a fresh one) while this thread is still mid-write;
+        # that shows up as ConnectionAbortedError/ConnectionResetError here,
+        # not as a test failure, but the base class's default handle_error()
+        # prints a full traceback to stderr for it regardless. Swallow just
+        # those two, so a client hanging up early stays silent and anything
+        # else still surfaces loudly.
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
+
+    def do_GET(self) -> None:  # noqa: N802
+        self.state.request_log.append(self.path)
+
+        if self.path in self.state.json_routes:
+            body = json.dumps(self.state.json_routes[self.path]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        remaining = self.state.fail_count.get(self.path, 0)
+        if remaining > 0:
+            self.state.fail_count[self.path] = remaining - 1
+            self.send_response(500)
+            self.end_headers()
+            return
+
+        body = self.state.files.get(self.path)
+        if body is None:
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        range_header = self.headers.get("Range")
+        if range_header and range_header.startswith("bytes="):
+            start = int(range_header[len("bytes=") :].split("-")[0])
+            chunk = body[start:]
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{len(body) - 1}/{len(body)}")
+            self.send_header("Content-Length", str(len(chunk)))
+            self.end_headers()
+            self.wfile.write(chunk)
+        else:
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+
+@pytest.fixture
+def http_fixture() -> Iterator[tuple[str, HttpFixtureState]]:
+    state = HttpFixtureState()
+    handler = type("_BoundFixtureHandler", (_FixtureHandler,), {"state": state})
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        yield base_url, state
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
