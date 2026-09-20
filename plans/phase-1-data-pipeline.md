@@ -1,7 +1,7 @@
 # Plan: Phase 1, the data pipeline
 
 - **Specs:** [001](../specs/001-datasets-and-acquisition.md), [002](../specs/002-pcap-flow-pipeline.md), [003](../specs/003-feature-representation-and-preprocessing.md), [004](../specs/004-splits-and-evaluation-protocol.md) (build steps 1 to 4)
-- **Status:** in-progress (10 of 14 items done)
+- **Status:** in-progress (11 of 14 items done)
 - **Exit gate:** phase 2 (specs 014, 015, 005) cannot start until [Exit criteria](#exit-criteria) are all green.
 
 ## Approach
@@ -30,8 +30,9 @@ Done and under test (19 tests, `ruff` clean):
 - [x] **[`data/download.py`](../src/adl_etc/data/download.py), [`manifest.py`](../src/adl_etc/data/manifest.py), [`ustc_download.py`](../src/adl_etc/data/ustc_download.py), [`iscx_download.py`](../src/adl_etc/data/iscx_download.py), [`iscx_labels.py`](../src/adl_etc/data/iscx_labels.py) (T3).** Resumable/retrying downloader engine, dataset manifest, and both D3/D4 acquisition pipelines. USTC (D4) verified against the live GitHub API (`--dry-run` lists all 20 real classes, 387 MB); the bulk download itself has not been run yet, pending the note in this task's log. 63 new tests (full suite 223/223).
 
 - [x] **[`data/export_pcap.py`](../src/adl_etc/data/export_pcap.py), [`configs/data/pcap.yaml`](../configs/data/pcap.yaml) (T4).** Joins `pcap_source` → `flows` → `tensors`. D4 fully exported for real: 403,394 flows, 24 files, 187 MB on disk, 4.8 minutes. D3 blocked on registration (spec 001); throughput measured on real D4 captures instead and used to make the subset-gate call anyway. Found and fixed a real performance bug along the way (`FlowBuilder._expire()`'s per-packet O(open flows) scan, 34% of wall time) — see the plan's progress log. 14 new tests (full suite 237/237).
+- [x] **[`docs/datasets/cesnet-tls-year22.md`](../docs/datasets/cesnet-tls-year22.md) (T5a), [`data/cesnet_csv.py`](../src/adl_etc/data/cesnet_csv.py), [`scripts/export_raw_csv.py`](../scripts/export_raw_csv.py) (T5b).** CESNET raw-CSV (Path B) exporter. Schema, PPI encoding and label columns recorded from a real downloaded day before any parser code was written. Reuses `FlowRecord.flowstats()` rather than reimplementing it. Two real bugs found by running against the real file (not the fixture) — see the plan's progress log: `json.loads` vs `ast.literal_eval` (17x), and a genuine correctness bug where per-row `TIME_FIRST`-based partitioning scattered 3.7% of one real file's rows into a shard set (`WEEK-2021-52`) that doesn't exist in the mirror, fixed by partitioning per file instead (also a 2.6x speedup). 26 new tests (full suite 263/263).
 
-Remaining: tasks **T5 to T8** below.
+Remaining: tasks **T6 to T8** below.
 
 ## Scope decisions
 
@@ -316,7 +317,7 @@ Record in `docs/datasets/cesnet-tls-year22.md`: the exact header, the PPI encodi
 
 **Files:** `scripts/export_raw_csv.py`, `src/adl_etc/data/cesnet_csv.py`, `tests/data/test_cesnet_csv.py`
 
-- Streams `flows-YYYYMMDD.csv.xz` in chunks (`pandas.read_csv(chunksize=...)`, never a whole-file read), parses the PPI columns into the `[ipt, dir, size, push]` order defined in `ppi.py`, computes flow statistics, and writes shards **partitioned by ISO week** via `ShardWriter.add_batch`.
+- Streams `flows-YYYYMMDD.csv.xz` in chunks (`pandas.read_csv(chunksize=...)`, never a whole-file read), parses the PPI columns into the `[ipt, dir, size, push]` order defined in `ppi.py`, computes flow statistics, and writes shards **partitioned by ISO week, keyed off each file's own name** via `ShardWriter.add_batch` — not off individual rows' `TIME_FIRST` (see the progress log: `TIME_FIRST` is UTC, the mirror's own file grouping isn't, and partitioning per row put 3.7% of one real file's rows in a shard set the mirror doesn't have).
 - Drops every identifier column (SNI, JA3, IPs, ASN, ports, destination prefix) at parse time, before anything is buffered. They are not dropped later; they never enter the process's data structures.
 - Runs unchanged locally or inside a Kaggle CPU kernel with the mirror mounted read-only at `/kaggle/input/cesnet-22/`, writing to `/kaggle/working/` for saving as an output dataset (spec 015 mounts it for training).
 - `--verify` implements spec 001's three mandatory checks: per-day flow counts against the shipped `stats-*.json`, the class list against the official 180-service servicemap, and — when a DataZoo HDF5 is present locally — a sampled field-level comparison over 10 000 flows on the overlapping fields.
@@ -326,11 +327,12 @@ Record in `docs/datasets/cesnet-tls-year22.md`: the exact header, the PPI encodi
 **Tests**
 
 - Parser tests against a small hand-written CSV fixture (10 rows) built from the header recorded in T5a, with one row's PPI computed by hand.
-- Week partitioning: rows spanning a week boundary land in the correct `WEEK-2022-NN` shard sets.
+- Week partitioning: files near a week boundary land in the correct `WEEK-2022-NN` shard sets, keyed off each file's own name.
+- A regression test for the real `TIME_FIRST`-vs-file-date bug above, at fixture scale.
 - Identifier columns are absent from the output arrays *and* from `meta.json`.
 - `--verify` fails loudly on a deliberately corrupted count.
 
-**Done when:** weeks 11 to 52 of D1 exist as shard sets, `--verify` passes on every exported day, and the total is within the spec-003 budget (< 12 GB with D2).
+**Done when:** weeks 11 to 52 of D1 exist as shard sets, `--verify` passes on every exported day, and the total is within the spec-003 budget (< 12 GB with D2). **Code done and verified against one real day** (487,081 real flows, `--verify` OK, spot-checked — see progress log); the full weeks-11-52 corpus run itself is not done locally — per this plan's own scope decision (D1 acquisition: Path B in a Kaggle CPU kernel, not a 30 GB local download), it belongs in a Kaggle kernel, not this laptop, the same way D3's bulk download is code-complete but blocked on a step outside this repo.
 
 ---
 
@@ -473,3 +475,12 @@ What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not re
   Extrapolated to ISCX's 28 GB even after the fix: ~281 minutes, still far past the 60-minute gate. Spec 001's open question ("ISCX subset size... default: all pcaps, since disk allows it") is corrected — that reasoning only ever considered disk space, never time. D3 will be a per-class subset once unblocked.
 
   D4's full corpus then exported for real with the fixed code: all 24 files, 403,394 flows (232,348 dropped for zero PPI — mostly MySQL/FTP/SMB's control-heavy traffic), 187 MB of shards, in 4.8 minutes (18,875 pkt/s, 13.7 MB/s aggregate — faster than the single-file measurement, since the fix helps proportionally more on files with fewer concurrent flows than the botnet capture used to measure it). Spot-checked: 24 distinct `session_id`s, `ppi_len` in [1, 30] with none at 0, label/category maps match spec 001's 20 classes and 2 categories exactly, `M.verify("ustc-tfc2016")` still `True`.
+- **2026-09-20.** T5a done: pulled one real day (`WEEK-2022-00/2022-01-01/flows-20220101.csv.xz`, 487,081 rows) plus its `stats-20220101.json` and the week stats via `kaggle datasets download -f`, recorded the real 45-column header, the `PPI` field's encoding, the label columns and the identifier columns in `docs/datasets/cesnet-tls-year22.md`. Two findings from reading real bytes, not the DataZoo docs:
+  - `json.loads` measured ~17x faster than `ast.literal_eval` on 50,000 real `PPI` cells (1.3 s vs 22.1 s), zero parse failures either way — used `json.loads`.
+  - The mirror's `WEEK-2022-NN` folders are not plain ISO calendar weeks. `2022-01-01`/`02` sit in `WEEK-2022-00` even though their true ISO week is `(2021, 52)` — confirmed directly against the mirror (`WEEK-2022-01/` starts the following Monday, 2022-01-03, exactly true ISO week 1). Checked the symmetric year-end case too: `WEEK-2022-52/` runs 2022-12-26 to 2022-12-31 with no rollover, and neither `WEEK-2022-53` nor `WEEK-2023-00` exists — that edge is unverified for other years. Also found a genuinely empty day (`stats-20221231.json`: 0 flows) whose `.csv.xz` decompresses to zero bytes, which crashes plain `pandas.read_csv` with `EmptyDataError` rather than yielding zero rows — handled explicitly.
+
+  T5b done: `data/cesnet_csv.py`, `scripts/export_raw_csv.py`. Flow statistics are computed by building a `FlowRecord` per row and calling its existing `flowstats()` — the same 46-column definition D3/D4 use — not reimplemented. 26 new tests, full suite 263/263, ruff/mypy clean.
+
+  Running the exporter against the *real* downloaded day (not just the fixture) found a second real bug, more serious than T5a's: partitioning shards by each row's own `TIME_FIRST` (converted to an ISO week) put 17,850 of the file's 487,081 real rows (3.7%) into a `WEEK-2021-52` shard set with no counterpart anywhere in the mirror. Root cause: `TIME_FIRST` is UTC; the mirror's own per-file grouping is local time (CET), so the first ~hour of any local day's flows carry a `TIME_FIRST` on the *previous* UTC calendar date. Fixed by deciding a shard's period once per file, from the file's own name (`date_from_filename`), never per row — every row from one file now lands in that file's one period, matching the mirror's real layout. This also turned out to be the bigger performance win: moving the ISO-week computation from once-per-row to once-per-file was a measured 2.6x speedup on the same file (172.6 s → 66.4 s, 2,822 → 7,339 rows/s), since `pd.Timestamp(...).isocalendar()` on 487,081 individual rows was costing more than the rest of the per-row work combined. A regression test (`test_period_is_the_files_own_date_not_each_rows_time_first`) reproduces the exact scenario at 2-row scale. The stale shard output produced by the buggy version was deleted and the file re-exported with the fix before being spot-checked: 487,081 flows (matches `stats-20220101.json`'s `total-saved` exactly), 179 classes / 23 categories, `ppi_len` in `[3, 30]` with none at 0, single `session_id`, `source_manifest_hash` recorded.
+
+  The full weeks-11-52 corpus itself was not run locally — consistent with this plan's own scope decision (D1 acquisition: Path B in a Kaggle CPU kernel, not a 30 GB local download); at the measured 7,339 rows/s, the full year is a multi-hour job that belongs on Kaggle, not this laptop, the same way D3's bulk download is code-complete but blocked outside this repo.

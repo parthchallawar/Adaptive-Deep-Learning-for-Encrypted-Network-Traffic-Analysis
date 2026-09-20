@@ -1,4 +1,17 @@
 {
+  "cesnet-tls-year22-probe": {
+    "exporter_git_commit": "104645b1c74a1dadc1618b154737eaea4a5b93b9",
+    "extracted_to": null,
+    "files": [
+      {
+        "bytes": 28208968,
+        "name": "flows-20220101.csv.xz",
+        "sha256": "eac706fd348528272a1706435913b0455440313fe8481cdb0b131bb5ed63ec3e"
+      }
+    ],
+    "retrieved": "2026-09-20T09:14:52Z",
+    "source_url": "kaggle:pranjalkar99/cesnet-22"
+  },
   "ustc-tfc2016": {
     "exporter_git_commit": "b9e18df929e3858f784f56542874f5c2016bf475",
     "extracted_to": "data\\raw\\ustc-tfc2016\\pcap",
