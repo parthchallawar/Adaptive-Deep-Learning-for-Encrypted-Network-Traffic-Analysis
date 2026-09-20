@@ -1,7 +1,7 @@
 # Plan: Phase 1, the data pipeline
 
 - **Specs:** [001](../specs/001-datasets-and-acquisition.md), [002](../specs/002-pcap-flow-pipeline.md), [003](../specs/003-feature-representation-and-preprocessing.md), [004](../specs/004-splits-and-evaluation-protocol.md) (build steps 1 to 4)
-- **Status:** in-progress (12 of 14 items done)
+- **Status:** done (14 of 14 items) — but see [Exit criteria](#exit-criteria): two are genuinely blocked outside this repo (a Kaggle-kernel run for D1's full corpus, and the user's own ISCX registration for D3), not merely unfinished
 - **Exit gate:** phase 2 (specs 014, 015, 005) cannot start until [Exit criteria](#exit-criteria) are all green.
 
 ## Approach
@@ -32,8 +32,10 @@ Done and under test (19 tests, `ruff` clean):
 - [x] **[`data/export_pcap.py`](../src/adl_etc/data/export_pcap.py), [`configs/data/pcap.yaml`](../configs/data/pcap.yaml) (T4).** Joins `pcap_source` → `flows` → `tensors`. D4 fully exported for real: 403,394 flows, 24 files, 187 MB on disk, 4.8 minutes. D3 blocked on registration (spec 001); throughput measured on real D4 captures instead and used to make the subset-gate call anyway. Found and fixed a real performance bug along the way (`FlowBuilder._expire()`'s per-packet O(open flows) scan, 34% of wall time) — see the plan's progress log. 14 new tests (full suite 237/237).
 - [x] **[`docs/datasets/cesnet-tls-year22.md`](../docs/datasets/cesnet-tls-year22.md) (T5a), [`data/cesnet_csv.py`](../src/adl_etc/data/cesnet_csv.py), [`scripts/export_raw_csv.py`](../scripts/export_raw_csv.py) (T5b).** CESNET raw-CSV (Path B) exporter. Schema, PPI encoding and label columns recorded from a real downloaded day before any parser code was written. Reuses `FlowRecord.flowstats()` rather than reimplementing it. Two real bugs found by running against the real file (not the fixture) — see the plan's progress log: `json.loads` vs `ast.literal_eval` (17x), and a genuine correctness bug where per-row `TIME_FIRST`-based partitioning scattered 3.7% of one real file's rows into a shard set (`WEEK-2021-52`) that doesn't exist in the mirror, fixed by partitioning per file instead (also a 2.6x speedup). 26 new tests (full suite 263/263).
 - [x] **[`evaluation/metrics.py`](../src/adl_etc/evaluation/metrics.py), [`evaluation/protocol.py`](../src/adl_etc/evaluation/protocol.py), [`evaluation/unknown_split.py`](../src/adl_etc/evaluation/unknown_split.py), [`configs/splits/`](../configs/splits/), [`scripts/make_unknown_split.py`](../scripts/make_unknown_split.py) (T6).** Every phase-1 metric (classification, earliness, policy, open-set, calibration — pure NumPy/pandas, no scikit-learn, since that stays a phase-2 extra), `protocol.load_split` with all four leakage assertions enforced at load time, and the stratified known/unknown class draw. Two real bugs found and fixed — see the plan's progress log. 41 new tests, full suite 304/304.
+- [x] **[`docs/datasets/{cesnet-tls-year22,cesnet-quic22,iscx-vpn-2016,ustc-tfc2016,self-captured}.md`](../docs/datasets/) (T7).** One card per dataset — retrieval command, real license and citation (researched, not assumed: CC BY 4.0 for D1/D2 confirmed on their own Zenodo records; D3's "no formal license, citation required" confirmed by fetching the dataset page directly; D4's mirror-repo `MPL-2.0` tag flagged as covering the mirror, not the underlying CTU/paper data), class list and support counts where real data exists (D4's full 20-class table; D1's one real day), known issues, privacy notes, and the decisions made. D2's card is explicit that nothing in it has been checked against real bytes, unlike every other card.
+- [x] **Spec close-out (T8).** Specs 001-004 status lines updated to name exactly what's implemented and what's deferred and why (not blanket "implemented"); `specs/README.md`'s build-order `State` column updated for steps 1-4; the six spec corrections were already landed incrementally (T1-T2, see the table below) — none were outstanding at this step.
 
-Remaining: tasks **T7 to T8** below.
+All tasks **T1 to T8** are done. Remaining risk lives in [Exit criteria](#exit-criteria) below, not in this checklist.
 
 ## Scope decisions
 
@@ -386,7 +388,7 @@ One card per dataset: source and exact retrieval command, license and citation, 
 
 Written as each dataset lands, not batched at the end — the details that matter are the ones noticed during the export.
 
-**Done when:** cards exist for D1 to D4 and each names its manifest entry.
+**Done when:** cards exist for D1 to D4 and each names its manifest entry. **Done** (plus a fifth card for D5, per the Files list above) — D1's and D4's cards name their real manifest entries (`cesnet-tls-year22-probe`, `ustc-tfc2016`); D2's and D3's cards have no manifest entry to name yet and say so explicitly rather than fabricating one.
 
 ---
 
@@ -439,17 +441,34 @@ Six inconsistencies (three anticipated while planning, three found while impleme
 
 ## Exit criteria
 
-Phase 2 starts when all of these hold:
+Phase 2 starts when all of these hold. Status as of 2026-09-20, honestly
+per-item rather than a blanket "phase 1 done": every task **T1 to T8** is
+complete, but two criteria below depend on real data this plan always said
+would come from outside this repo (a Kaggle kernel, and the user's own
+ISCX registration), and neither of those steps has happened yet. Declaring
+those criteria green without the data behind them would be exactly the
+kind of unmeasured claim this plan's own first rule (correctness decided
+by hand-written expectations, not eyeballing) exists to prevent.
 
-1. `pytest` green on the full phase-1 suite; `ruff` and `mypy` clean.
-2. D1 shard sets exist for weeks 11 to 52 with `--verify` passing on every exported day.
-3. D3 and D4 shard sets exist, with per-file `session_id`s and audit parquet.
-4. `data/manifest.json` validates for D1 to D4.
-5. A `Standardizer` fitted on the D1 train weeks is saved with its hash, and a val split loads with all four leakage assertions passing.
-6. Dataset cards exist for D1 to D4.
-7. Measured numbers recorded in the progress log: flows per week, shard sizes on disk, parse throughput, tokenise throughput.
+1. **Met.** `pytest` green on the full phase-1 suite (304/304); `ruff` and `mypy` clean.
+2. **Blocked, not met.** D1 shard sets exist for `WEEK-2022-00` only (one real day, plan T5). Weeks 11 to 52 need the full raw-CSV corpus exported, which this plan's own scope decision puts in a Kaggle CPU kernel (D1 acquisition: Path B, spec 001), not this laptop — at the measured 7,339 rows/s that's a multi-hour job. `--verify` passes on the one day that has been exported.
+3. **Half met.** D4 shard sets exist for real (`data/processed/ustc-tfc2016/all`, 403,394 flows, per-file `session_id` 0-23, audit parquet written). D3 shard sets do not exist — blocked on the user's one-time ISCX registration (spec 001); the exporter and split-loading code are complete and tested against fixtures, same pattern as D3's downloader.
+4. **Met for what's downloaded.** `data/manifest.json` validates (`M.verify(...)` is `True`) for `ustc-tfc2016` and for the one real `cesnet-tls-year22-probe` file. There is nothing to validate yet for D2 (not acquired) or D3 (not downloaded).
+5. **Blocked, not met.** No `Standardizer` has been fit for real — `Standardizer.fit` (spec 003, plan T2) needs a real D1 train-period `ShardSet`, and the only real D1 data on disk is one day, not the train weeks (11-26) spec 004 defines. `protocol.load_split`'s standardizer-hash assertion is tested (real round trip, `tests/evaluation/test_protocol.py`) but has not been exercised against a real fitted D1 Standardizer.
+6. **Met.** Cards exist for D1 to D5 (plan T7); each names its real manifest entry where one exists, and says plainly where one doesn't.
+7. **Met for what's measured**, recorded through this progress log rather than gathered specially for this line: D4's real export (403,394 flows, 187 MB, 4.8 min, 18,875 pkt/s — T4); D1's real single-day export (487,081 flows, 7,339 rows/s after the per-file partitioning fix — T5); `tokenize()` on 1M synthetic flows, 3.1 s (T2). Flows-per-week for D1 and shard sizes for the full corpus are not measured, since that corpus doesn't exist yet (criterion 2).
 
-What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not refit, a metric suite that takes `logits[N,K,C]`, and split YAMLs that refuse to leak.
+**Net: 3 of 7 fully met, 2 partially met, 2 blocked outside this repo.**
+Everything blockable *inside* this repo is done. The two remaining blockers
+are unchanged from what T3-T5 already flagged: run the D1 weeks-11-52
+export on Kaggle, and have the user complete the ISCX registration. Phase
+2's own early work (specs 014/015: experiment tracking, Kaggle pipeline)
+does not itself need D1's full corpus or D3 to start — it needs a
+`ShardSet` it can mmap, which D4 already provides for real. Treat phase 2
+as unblocked to *start* on that basis, but not as fully exited from phase 1
+until criteria 2, 3 and 5 are re-checked for real.
+
+What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not refit (once one exists), a metric suite that takes `logits[N,K,C]`, and split YAMLs that refuse to leak.
 
 ## Progress log
 
@@ -492,3 +511,6 @@ What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not re
   - **`draw_unknown_split`'s seed had no effect on real data.** The first version picked each category's unknown classes by alternating the rarest and most-frequent remaining class by support rank — a selection fully determined by the support ordering whenever support values have no ties, which is the normal case on real data (class flow counts are essentially never exactly equal). `rng.shuffle` before the sort was silently discarded by the subsequent sort-by-support, so seed 42 and seed 43 produced the *identical* draw. Not caught by the unit tests (their synthetic fixture had tied support values within each stratum, where the shuffle-then-stable-sort happens to matter) — caught by running `scripts/make_unknown_split.py` for real against the real D4 shard set (`ustc-tfc2016/all`), where both seeds gave the same 5-class unknown set. Fixed by replacing the rank-based alternation with a genuine random choice (`rng.choice(..., replace=False)`) split between each category's rarer and more-frequent halves; re-running the same real command afterward gave two different sets ([1, 3, 7, 11, 17] vs [5, 7, 11, 15, 18]).
 
   D3 has no real data yet (registration-gated), so `configs/splits/d3_grouped.yaml`'s session_ids mechanism is proven against a synthetic fixture instead; `configs/splits/d4_anomaly.yaml` **is** run for real, against the actual D4 shard set, and asserted against its exact real category counts (282,412 benign / 120,982 malware, matching plan T4's numbers).
+- **2026-09-20.** T7 done: five dataset cards (`docs/datasets/{cesnet-tls-year22,cesnet-quic22,iscx-vpn-2016,ustc-tfc2016,self-captured}.md`). License and citation for every dataset were researched, not assumed — D1 (CC BY 4.0, Hynek et al., *Scientific Data* 2024) and D2 (CC BY 4.0, *Data in Brief* 2023) confirmed on their own Zenodo records, not just the paper; D3 confirmed to have **no formal open license**, only a mandatory-citation "publicly available for researchers" notice, by fetching `unb.ca/cic/datasets/vpn.html` directly; D4's GitHub mirror repository is tagged `MPL-2.0` via the GitHub API, flagged in the card as covering the mirror maintainer's own repo, not a relicensing of the underlying CTU/paper data — cite the paper (Wang et al., ICOIN 2017), not the repo tag. D4's card carries the full real 20-class support table (`data/processed/ustc-tfc2016/all`); D1's carries what the one real exported day shows (179/180 apps, 23/24 categories); D2's and D3's cards say plainly that nothing in them has been checked against real bytes yet, rather than presenting spec 001's target numbers as if they were measurements.
+
+  T8 done: spec 001-004 status lines rewritten to name exactly what's implemented, what's real, and what's deferred and why — two were stale in a way worth noting (spec 003 still said "shard writer and tokeniser pending" though both landed in plan T2, and spec 004 was still "draft" though T6 landed its first pass), not just spec 001/002 which already tracked recent work. `specs/README.md`'s build-order `State` column updated to match, steps 1-4. The six spec corrections (table above) were already landed incrementally as each task shipped — none were outstanding at this step, confirmed by re-reading the table rather than assumed. [Exit criteria](#exit-criteria) reassessed per-item rather than declared green as a block: 3 of 7 fully met, 2 partially met (D4 real / D3 blocked; manifest valid for what's downloaded), 2 genuinely blocked outside this repo (D1's weeks-11-52 corpus needs a Kaggle kernel; the D1 `Standardizer` needs that corpus to fit on). Phase 1's tasks (T1-T8) are complete; phase 1's *data* is not, by design, since two steps were never this repo's to finish alone.

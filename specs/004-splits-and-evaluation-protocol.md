@@ -1,6 +1,6 @@
 # Spec 004: Splits and Evaluation Protocol
 
-- **Status:** draft
+- **Status:** partially implemented (first pass done, plan T6: classification/earliness/policy/open-set/calibration metrics, `protocol.load_split` with all four leakage assertions, and the stratified unknown-class draw, all built and tested; `load_split` run for real against D4's shard set; budget-tracking and drift-slope metrics still deferred to specs 011/012, and efficiency metrics to spec 013, exactly as this spec already says it must be — see "scaffolding, not a one-off build" above)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 4 of 18, then extended alongside 010, 009 and 011 (it is scaffolding, not a one-off build)

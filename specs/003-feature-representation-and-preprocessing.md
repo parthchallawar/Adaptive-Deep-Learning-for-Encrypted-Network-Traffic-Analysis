@@ -1,6 +1,6 @@
 # Spec 003: Feature Representation and Preprocessing
 
-- **Status:** partially implemented (PPI schema and flow statistics built; shard writer and tokeniser pending)
+- **Status:** implemented for phase 1's scope (PPI schema, flow statistics, shard writer/reader, tokeniser, continuous view, `Standardizer`, all five augmentations and the streaming tensoriser all built and tested, plans T1-T2; run against real D4 shards, 403,394 flows)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 3 of 18

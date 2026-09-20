@@ -1,6 +1,6 @@
 # Spec 001: Datasets and Acquisition
 
-- **Status:** draft
+- **Status:** partially implemented (D3/D4 downloaders, manifest and D1 Path B exporter built and tested; D4 downloaded and exported for real, 403,394 flows; D1's exporter run for real against one day only — the weeks 11-52 corpus is a Kaggle-kernel job, spec's own Path B decision, out of phase 1's scope; D3 blocked on the user's one-time registration; D2 not yet acquired; D5 deferred to phase 5 by design)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 1 of 18

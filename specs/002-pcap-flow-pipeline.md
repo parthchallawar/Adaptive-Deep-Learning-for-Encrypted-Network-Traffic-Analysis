@@ -1,6 +1,6 @@
 # Spec 002: PCAP and Live Capture to Flows to PPI
 
-- **Status:** partially implemented (pcap path built and tested; live capture and the optional backends pending)
+- **Status:** implemented for phase 1's scope (pcap path built, tested, and run against real D4 captures — 403,394 flows exported for real, plan T4; D3 will exercise the same code once unblocked, spec 001; live capture and the optional NFStream/ipfixprobe backends deliberately deferred to phase 5 / indefinitely, per the plan's own scope-decisions table, not a gap)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 2 of 18

@@ -1,4 +1,59 @@
-# CESNET-TLS-Year22 — raw CSV mirror schema (T5a)
+# CESNET-TLS-Year22 (D1)
+
+- **Role:** primary dataset — supervised training, drift study, open-set (spec 001).
+- **Manifest entry:** `cesnet-tls-year22-probe` (`data/manifest.json`) for the one real day exported so far; the full corpus will register as `cesnet-tls-year22` once exported.
+- **Source and retrieval:** Path B (spec 001) — the third-party Kaggle mirror `pranjalkar99/cesnet-22` of the original CESNET release, pulled per file/day with the Kaggle CLI:
+  ```
+  kaggle datasets download -d pranjalkar99/cesnet-22 \
+      -f CESNET-TLS-Year22/<WEEK-YYYY-NN>/<date>/flows-<date>.csv.xz -p data/raw/cesnet-tls-year22
+  ```
+  Path A (the canonical `cesnet-datazoo` HDF5 download) is the documented fallback and verification source (spec 001) but has not been used in this project yet.
+- **License:** CC BY 4.0 (Creative Commons Attribution 4.0 International) — confirmed on the dataset's own Zenodo record, not just the paper.
+- **Citation:** Hynek, K., Luxemburk, J., Pešek, J., Čejka, T. & Šiška, P. "CESNET-TLS-Year22: A year-spanning TLS network traffic dataset from backbone lines." *Scientific Data* (2024). DOI: [10.5281/zenodo.10608607](https://doi.org/10.5281/zenodo.10608607).
+- **Size:** ~30.5 GB compressed (main archive, Zenodo); spec 001's raw-CSV-mirror estimate is ~30 GB, consistent.
+- **Time structure:** all of 2022, partitioned by the mirror's own `WEEK-2022-NN` folders (not plain ISO calendar week at the year boundary — see "Week labeling" below).
+- **Mirror trust:** this is a **third-party re-upload**, not the CESNET/Zenodo publication directly. Spec 001 makes `--verify` (per-day count vs. `stats-*.json`, class list, and a sampled DataZoo comparison) mandatory before any result depends on it. `--verify` has passed on the one real day exported so far (`scripts/export_raw_csv.py --verify`, 2026-09-20); the DataZoo field-level comparison is still skipped (no local HDF5 downloaded).
+
+## Class list and support (real, one day only)
+
+The full 180-app / 24-category vocabulary (spec 001) needs the whole year;
+what's been measured for real, from `WEEK-2022-00/2022-01-01`:
+
+| | value |
+|---|---|
+| apps seen | 179 (of 180 — a single day naturally omits the rarest few) |
+| categories seen | 23 (of 24) |
+| flows | 487,081 (all of them; zero dropped for zero-PPI) |
+
+Per-class/per-category support counts for the full corpus are not available
+yet — they depend on the weeks-11-52 export (T5b's "done when," still
+pending a Kaggle-kernel run, see below) and on `scripts/make_unknown_split.py`
+being run for real once that export exists (plan T6).
+
+## Known issues
+
+- **Week-10 exporter artefact** (spec 004): the dataset's own documentation flags weeks 1-9 and 11-52 as separate regimes; this project's splits (`configs/splits/d1_main.yaml`) start at week 11 for exactly this reason, not because of anything found independently here.
+- **`WEEK-2022-NN` is not plain ISO calendar week** at the start of the year — see "Week labeling" below. A naive `isocalendar()`-based exporter would silently disagree with the mirror's own directory layout for a handful of dates every year.
+- **`TIME_FIRST` (UTC) disagrees with the mirror's own (local-time) file grouping** for ~3.7% of any given day's rows, right at the day boundary — see "`TIME_FIRST` is UTC" below. This is a real, measured bug this project hit and fixed (plan T5b), not a hypothetical.
+- **Some days are genuinely empty** (zero flows, zero-byte compressed file) — see "A day can be entirely empty" below.
+- **Third-party mirror** (see "Mirror trust" above): every result that depends on this data needs `--verify` to have passed for the specific days/weeks it uses.
+
+## Privacy notes
+
+Per spec 001: D1 is already anonymised by CESNET (source IPs anonymised,
+no payload). This project additionally never reads `SRC_IP`, `DST_IP`,
+`DST_ASN`, `DST_PORT`, `TLS_SNI`, or `TLS_JA3` from the CSV at all (`usecols`
+excludes them at parse time, not a later filter — see "Identifier columns"
+below), so none of them ever enter this process's memory, let alone a shard.
+
+## Decisions this project made
+
+- **Path B over Path A** for the drift study (spec 001): weekly/daily granularity is what the drift curves need, and it avoids a 30 GB download plus a ~4 GB shard upload. Path A stays the verification fallback.
+- **Splits start at week 11**, per the dataset's own documented week-10 exporter change (spec 004), not a project-specific choice.
+- **Period labels follow the mirror's own `WEEK-2022-NN` folder names** exactly (`cesnet_csv.iso_week`), not a recomputed ISO week, because the two disagree at the year boundary (see below) and the mirror's own layout is the ground truth for cross-referencing.
+- **A shard's period is decided per source file, not per row** (`cesnet_csv.date_from_filename`) — see "`TIME_FIRST` is UTC" below for why the per-row alternative is actually wrong, not just a stylistic choice.
+
+## Schema record (plan T5a)
 
 Recorded from a real file, not the DataZoo docs: `pranjalkar99/cesnet-22`,
 `CESNET-TLS-Year22/WEEK-2022-00/2022-01-01/flows-20220101.csv.xz` (26.9 MB
@@ -8,7 +63,7 @@ compressed, 487,081 rows) plus its `stats-20220101.json` and the week-level
 Every claim below was read out of these three files, not assumed from spec
 001 or the DataZoo package.
 
-## Header (45 columns, in this exact order)
+### Header (45 columns, in this exact order)
 
 ```
 ID, SRC_IP, DST_IP, DST_ASN, DST_PORT, PROTOCOL, TLS_SNI, TLS_JA3,
@@ -26,7 +81,7 @@ every row sampled (this is the TLS dataset; QUIC is the separate D2
 mirror) — so this file carries no UDP rows to cross-check `udp_idle_timeout`
 against; that stays untested until D2's schema is probed the same way.
 
-## The `PPI` column — encoding, nesting, channel order
+### The `PPI` column — encoding, nesting, channel order
 
 One field, a Python-literal string of 4 same-length lists:
 
@@ -78,7 +133,7 @@ definition, one place") says our flow-statistics histograms come from
 mixing in CESNET's differently-binned histograms would silently produce a
 second, incompatible definition of the same feature.
 
-## Label columns and vocabulary
+### Label columns and vocabulary
 
 - **`APP`** — the class label. 179 distinct values in this one day (spec
   001's "180 apps" is the full-year vocabulary; a single day naturally
@@ -95,7 +150,7 @@ second, incompatible definition of the same feature.
   any per-category check has to be derived by aggregating rows' own
   `CATEGORY` values, not read off a shipped list.
 
-## Row count vs. `stats-*.json`
+### Row count vs. `stats-*.json`
 
 Exact match, all three ways, for `2022-01-01`:
 
@@ -112,7 +167,7 @@ the `--verify` per-day count check (spec 001) is a straightforward
 can double as the ground-truth class list and per-class support count for
 that file, with no separate reconciliation logic needed.
 
-## Identifier columns to drop at parse time
+### Identifier columns to drop at parse time
 
 Per spec 001's privacy rule (never store or use SNI/JA3/IP/ASN/port as
 model inputs), dropped **before** anything is buffered, not filtered
@@ -132,7 +187,7 @@ PCAP-sourced flows.
 worth carrying into `flows.parquet`'s audit sidecar for D1 the same way
 `end_reason` already is for D3/D4, not into the model-facing arrays.
 
-## Timestamps
+### Timestamps
 
 `TIME_FIRST`/`TIME_LAST` are ISO-8601-shaped but **naive** (no `Z` or UTC
 offset, e.g. `2021-12-31T22:00:00`, microsecond precision on
@@ -145,7 +200,7 @@ field-level comparison. `DURATION` (seconds, float) is
 `TIME_LAST - TIME_FIRST` and agrees with the two timestamps in the one
 row checked by hand.
 
-## Week labeling — not plain ISO calendar week
+### Week labeling — not plain ISO calendar week
 
 The mirror's own `WEEK-2022-NN` folder names were checked directly, not
 assumed to be Python's `isocalendar()`. They agree for almost the whole
@@ -172,7 +227,7 @@ start-of-year stub folded into `WEEK-<calendar_year>-00`), not a naive
 `WEEK-2021-52` shard set that disagrees with the mirror's own directory it
 came from.
 
-## A day can be entirely empty — not just zero matching rows
+### A day can be entirely empty — not just zero matching rows
 
 `stats-20221231.json` reports `{"global": {"total-saved": 0}, "apps": {}}`
 — a real zero-flow day in the mirror, not a hypothetical. Its
@@ -184,7 +239,7 @@ treats it as zero rows, not a crash — found by downloading and decompressing
 the file, not by guessing that "0 flows" would behave like an empty
 dataframe.
 
-## `TIME_FIRST` is UTC; the mirror's own file grouping is not
+### `TIME_FIRST` is UTC; the mirror's own file grouping is not
 
 Found by running the exporter against this real file, not by inspection:
 partitioning shards by each row's own `TIME_FIRST` (converted to its ISO
@@ -220,7 +275,7 @@ rows/s — because `pd.Timestamp(...).isocalendar()` on 487,081 individual
 rows was expensive relative to the rest of the per-row cost (JSON-parsing
 `PPI`, building a `FlowRecord`, computing `flowstats()`).
 
-## What this fixes for T5b
+### What this fixes for T5b
 
 - Parser reads only `cesnet_csv.USE_COLUMNS` (never the 6 identifier
   columns, via `usecols`), parses `PPI` via `json.loads` into

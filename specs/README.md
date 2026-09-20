@@ -18,10 +18,10 @@ The order below is a verified topological sort of the `Depends on` line of every
 
 | Step | Spec | Why here | State |
 |---|---|---|---|
-| 1 | [001](001-datasets-and-acquisition.md) Datasets and acquisition | nothing exists without data | not started |
-| 2 | [002](002-pcap-flow-pipeline.md) PCAP and live capture to PPI | defines the record everything reads | pcap path done and tested |
-| 3 | [003](003-feature-representation-and-preprocessing.md) Features and preprocessing | the on-disk format every module loads | schema done, shards and tokeniser pending |
-| 4 | [004](004-splits-and-evaluation-protocol.md) Splits and evaluation protocol | first pass only; it grows later | not started |
+| 1 | [001](001-datasets-and-acquisition.md) Datasets and acquisition | nothing exists without data | D3/D4 downloaders done; D4 downloaded and exported for real; D1 Path B exporter done, one real day exported; D2 not started; D3 blocked on user registration |
+| 2 | [002](002-pcap-flow-pipeline.md) PCAP and live capture to PPI | defines the record everything reads | pcap path done, tested, and run against real D4 captures; live capture and optional backends deferred to phase 5 / indefinitely by design |
+| 3 | [003](003-feature-representation-and-preprocessing.md) Features and preprocessing | the on-disk format every module loads | done: schema, shard writer, tokeniser, augmentations and stream tensoriser all built and tested |
+| 4 | [004](004-splits-and-evaluation-protocol.md) Splits and evaluation protocol | first pass only; it grows later | first pass done: phase-1 metrics, split loading and leakage assertions built and tested, run for real against D4; open-set/drift/budget metrics still extend at steps 11 to 13 |
 | 5 | [014](014-experiment-tracking-and-reproducibility.md) Experiment tracking | **moved ahead of 005**: the first trained model must be tracked, or every baseline gets rerun | not started |
 | 6 | [015](015-kaggle-training-pipeline.md) Kaggle training pipeline | same reason: the first GPU run must be reproducible | credentials and sync script ready |
 | 7 | [005](005-baseline-models.md) Baseline models | first real numbers | not started |

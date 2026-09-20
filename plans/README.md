@@ -15,4 +15,4 @@ Use [`template.md`](./template.md) as the starting point.
 
 | Plan | Covers | Status |
 |---|---|---|
-| [phase-1-data-pipeline.md](phase-1-data-pipeline.md) | specs 001 to 004 (build steps 1 to 4) | in-progress: tasks T1 to T8, 12 of 14 items done |
+| [phase-1-data-pipeline.md](phase-1-data-pipeline.md) | specs 001 to 004 (build steps 1 to 4) | tasks T1 to T8 done; exit criteria 2/5 blocked on a Kaggle-kernel run (D1) and the user's ISCX registration (D3), not this repo |
