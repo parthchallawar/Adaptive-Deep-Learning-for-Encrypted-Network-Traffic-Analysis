@@ -89,7 +89,7 @@ PacketEvent = {flow_id, k, ipt, dir, size, push, ts}      # k = index within PPI
 ## Performance considerations
 
 - ipfixprobe, where available, processes tens of thousands of packets per second per core from pcap, so the 28 GB ISCX set is a few hours.
-- dpkt backend is about 50k to 150k packets/s; acceptable for tests and small captures only.
+- dpkt backend measured at about 9k to 19k packets/s end to end on real captures (plan T4; the "50k to 150k" figure this line used to state was an unmeasured guess, corrected once real numbers existed — see the plan's progress log). `FlowBuilder`'s own overhead was profiled down from 34% of wall time to a few percent by throttling its idle-flow sweep instead of running it on every packet (correctness preserved exactly: the one flow a packet actually belongs to is still checked on every single packet, only the sweep for *other*, untouched flows is throttled); dpkt's own per-packet parsing is the remaining, expected bottleneck. Acceptable for tests and small-to-medium captures; large corpora need the subset strategy documented in spec 001's D3 entry.
 - Streaming path target: under 1 ms per PacketEvent end-to-end into the model (measured in spec 013).
 
 ## Testing

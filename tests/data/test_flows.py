@@ -199,6 +199,68 @@ def test_udp_flows_have_no_push_flag(tmp_path):
     assert record.ppi[0, P.SIZE_POS] == 1200
 
 
+def test_udp_idle_timeout_is_independent_of_tcp():
+    """spec 002: UDP/QUIC gets its own idle timeout, since there is no
+    FIN/RST to close the flow explicitly. A UDP flow must expire on
+    udp_idle_timeout even while inactive_timeout (TCP's) would not yet
+    have fired, and vice versa."""
+    builder = FlowBuilder(inactive_timeout=30.0, udp_idle_timeout=5.0)
+    udp_pkt = ParsedPacket(ts=0.0, src=CLIENT, dst=SERVER, proto=17, payload_len=100)
+    tcp_pkt = ParsedPacket(ts=0.0, src=CLIENT, dst=SERVER, proto=PROTO_TCP, payload_len=100)
+
+    list(builder.add(udp_pkt))
+    list(builder.add(tcp_pkt))
+    # at t=10: past udp_idle_timeout (5s) but not inactive_timeout (30s)
+    later = ParsedPacket(ts=10.0, src=CLIENT, dst=SERVER, proto=17, payload_len=1)
+    expired = list(builder.add(later))
+
+    assert len(expired) == 1
+    assert expired[0].proto == 17
+    assert expired[0].end_reason == EndReason.IDLE
+    assert builder.open_flows == 2  # the new UDP flow, plus the still-open TCP one
+
+
+def test_udp_idle_timeout_defaults_to_inactive_timeout():
+    """Backward compatible: omitting udp_idle_timeout preserves the old
+    single-timeout behaviour exactly."""
+    builder = FlowBuilder(inactive_timeout=12.0)
+    assert builder.udp_idle_timeout == 12.0
+
+
+def test_key_reuse_is_caught_even_when_sweep_is_throttled():
+    """Regression test for the throttled-sweep optimisation (plan T4: the
+    old per-packet full scan of every open flow was 34% of wall time on a
+    real capture). A same-key reuse after that *specific* flow's own timeout
+    must always start a new flow, never get merged into the stale one, even
+    when many other flows' traffic has kept the throttled sweep from having
+    caught up to this one yet -- the realistic case this optimisation has to
+    stay correct under, not just an idle laptop.
+    """
+    other = (SERVER_IP, 8080)  # a second flow, distinct from CLIENT/SERVER's
+    builder = FlowBuilder(inactive_timeout=10.0, active_timeout=10_000.0, fin_linger=10_000.0)
+    # sweep_interval = min(10, 10_000, 10_000, 10) / 4 = 2.5s
+
+    def a_pkt(ts: float) -> ParsedPacket:
+        return ParsedPacket(ts=ts, src=CLIENT, dst=SERVER, proto=PROTO_TCP, payload_len=10)
+
+    def other_pkt(ts: float) -> ParsedPacket:
+        return ParsedPacket(ts=ts, src=CLIENT, dst=other, proto=PROTO_TCP, payload_len=10)
+
+    list(builder.add(a_pkt(0.0)))  # flow A starts, idle from here on
+    for ts in range(1, 11):  # 1.0s cadence keeps last_sweep moving without ever
+        list(builder.add(other_pkt(float(ts))))  # landing exactly on flow A's 10.0s boundary
+
+    # Flow A is now individually past its 10s inactive_timeout, but the last
+    # sweep tick (driven by "other"'s traffic) ran at t=9.0, where flow A had
+    # only been idle 9s -- not yet expired then -- so nothing has closed it.
+    expired = list(builder.add(a_pkt(10.1)))
+
+    assert len(expired) == 1
+    assert expired[0].end_reason == EndReason.IDLE
+    assert expired[0].packets == 1  # the stale flow A alone, not merged with the new packet
+    assert builder.open_flows == 2  # a fresh flow A, plus the still-open "other" flow
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [(-5.0, 0), (0.0, 0), (12.7, 13), (4.999, 5), (999_999.0, P.IPT_MAX_MS)],

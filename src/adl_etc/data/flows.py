@@ -156,14 +156,18 @@ class FlowBuilder:
     """Aggregates packets into flows with ipfixprobe-style timeouts.
 
     Args:
-        inactive_timeout: seconds of silence before a flow is exported.
+        inactive_timeout: seconds of silence before a TCP flow is exported.
         active_timeout: maximum lifetime of a flow regardless of activity.
         fin_linger: grace period after both sides have sent FIN, so that a
             trailing ACK or retransmission still lands in the same flow.
         k_max: PPI slots per flow.
+        udp_idle_timeout: seconds of silence before a UDP/QUIC flow is
+            exported. Defaults to ``inactive_timeout`` when not given; spec
+            002 documents UDP/QUIC as needing its own (typically shorter)
+            value since there is no FIN/RST to close the flow explicitly.
 
-    The defaults follow the exporter settings used for the CESNET captures.
-    Yielded records are ordered by expiry, not by flow start.
+    The TCP defaults follow the exporter settings used for the CESNET
+    captures. Yielded records are ordered by expiry, not by flow start.
     """
 
     def __init__(
@@ -173,24 +177,49 @@ class FlowBuilder:
         fin_linger: float = 5.0,
         k_max: int = P.K_MAX,
         session_id: int = 0,
+        udp_idle_timeout: float | None = None,
     ) -> None:
         self.inactive_timeout = inactive_timeout
         self.active_timeout = active_timeout
         self.fin_linger = fin_linger
         self.k_max = k_max
         self.session_id = session_id
+        self.udp_idle_timeout = inactive_timeout if udp_idle_timeout is None else udp_idle_timeout
         self._flows: dict[FlowKey, _FlowState] = {}
         self.skipped_packets = 0
         self.clock_jumps = 0
+
+        # A full expiry sweep is O(open flows); doing it on every packet made
+        # it the single biggest cost in the pipeline (measured: 34% of wall
+        # time on a real capture, ahead of all dpkt parsing combined), even
+        # though only one flow -- the one this packet belongs to -- actually
+        # needs an up-to-the-packet answer. That one is still always checked
+        # exactly, inline in add() below; the sweep for *other*, untouched
+        # flows is throttled to this interval instead, since a flow nobody is
+        # sending packets to has no reader waiting on its exact export time.
+        self._sweep_interval = max(
+            min(inactive_timeout, active_timeout, fin_linger, self.udp_idle_timeout) / 4,
+            1e-6,
+        )
+        self._last_sweep: float | None = None
 
     # -- public API ---------------------------------------------------------
 
     def add(self, pkt: ParsedPacket) -> Iterator[FlowRecord]:
         """Feed one packet; yields any flows that expired at this timestamp."""
-        yield from self._expire(pkt.ts)
+        yield from self._sweep_if_due(pkt.ts)
 
         key = flow_key(pkt.src, pkt.dst, pkt.proto)
         state = self._flows.get(key)
+        if state is not None:
+            reason = self._expiry_reason(state, pkt.ts)
+            if reason is not None:
+                # Same 5-tuple reused after this specific flow timed out: it
+                # must become a new flow (spec 002's "port reuse" edge case),
+                # never silently absorbed into the stale one, regardless of
+                # whether the throttled sweep above has caught up to it yet.
+                yield self._close(key, reason)
+                state = None
         if state is None:
             state = _FlowState(
                 key=key,
@@ -253,14 +282,31 @@ class FlowBuilder:
 
     # -- internals ----------------------------------------------------------
 
+    def _expiry_reason(self, state: _FlowState, now: float) -> str | None:
+        """Which :class:`EndReason` applies to ``state`` at time ``now``, or
+        ``None`` if it is still alive. The single source of truth for all
+        three expiry conditions, shared by the per-packet check in
+        :meth:`add` and the throttled sweep in :meth:`_expire`."""
+        if state.close_at is not None and now >= state.close_at:
+            return EndReason.FIN
+        idle_timeout = self.udp_idle_timeout if state.proto == PROTO_UDP else self.inactive_timeout
+        if now - state.last_ts >= idle_timeout:
+            return EndReason.IDLE
+        if now - state.start_ts >= self.active_timeout:
+            return EndReason.ACTIVE
+        return None
+
+    def _sweep_if_due(self, now: float) -> Iterator[FlowRecord]:
+        if self._last_sweep is not None and now - self._last_sweep < self._sweep_interval:
+            return
+        self._last_sweep = now
+        yield from self._expire(now)
+
     def _expire(self, now: float) -> Iterator[FlowRecord]:
         for key, state in list(self._flows.items()):
-            if state.close_at is not None and now >= state.close_at:
-                yield self._close(key, EndReason.FIN)
-            elif now - state.last_ts >= self.inactive_timeout:
-                yield self._close(key, EndReason.IDLE)
-            elif now - state.start_ts >= self.active_timeout:
-                yield self._close(key, EndReason.ACTIVE)
+            reason = self._expiry_reason(state, now)
+            if reason is not None:
+                yield self._close(key, reason)
 
     def _close(self, key: FlowKey, reason: str) -> FlowRecord:
         s = self._flows.pop(key)
