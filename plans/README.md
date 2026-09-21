@@ -15,4 +15,5 @@ Use [`template.md`](./template.md) as the starting point.
 
 | Plan | Covers | Status |
 |---|---|---|
-| [phase-1-data-pipeline.md](phase-1-data-pipeline.md) | specs 001 to 004 (build steps 1 to 4) | tasks T1 to T8 done; exit criteria 2/5 blocked on a Kaggle-kernel run (D1) and the user's ISCX registration (D3), not this repo |
+| [phase-1-data-pipeline.md](phase-1-data-pipeline.md) | specs 001 to 004 (build steps 1 to 4) | tasks T1 to T8 done; exit criteria 2/5 blocked on a Kaggle-kernel run (D1), which phase 2's T3 closes; D3's registration gate cleared 2026-09-21 |
+| [phase-2-tracking-kaggle-baselines.md](phase-2-tracking-kaggle-baselines.md) | specs 014, 015, 005 (build steps 5 to 7) | not started; tasks T1 to T9 defined, 8 spec corrections scheduled |
