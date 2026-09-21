@@ -64,8 +64,19 @@ If kernels can't use internet on this account, push the code as a dataset with
 instead of pip-installing from GitHub.
 
 ```
-./scripts/kaggle_sync.sh push-kernel
+./scripts/kaggle_sync.sh push-kernel              # kernel/  (training)
+./scripts/kaggle_sync.sh push-kernel kernel/export-d1   # the D1 export kernel (CPU)
 ```
+
+`kernel/export-d1/` is the CPU-only export of CESNET-TLS-Year22 weeks 11-52 (10% uniform
+sample, every day checked against its `stats-*.json`, Standardizer fit on weeks 11-26, the
+real `d1_main.yaml` loaded). It runs first as a three-day probe (`ADL_EXPORT_MODE`
+defaults to `probe` in the file), which reports speed, size and whether a CLI-pushed
+kernel has internet; switch the default to `full` for the real run.
+`tests/test_kernel_export_d1.py` runs the whole script against a synthetic mirror.
+
+`./scripts/kaggle_sync.sh check` needs private-endpoint access, so it fails when the
+token is stale even though public downloads still work; fix with `kaggle auth login`.
 
 ## Results: Kaggle → results/
 

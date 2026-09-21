@@ -18,7 +18,8 @@ Commands:
   version-dataset <msg>    Push a new version of an existing dataset
   push-code [msg]          Package src/ + configs/ as a Kaggle dataset so kernels
                            can import the project without internet access
-  push-kernel              Push kernel/ to Kaggle (kernel-metadata.json required)
+  push-kernel [dir]        Push a kernel folder to Kaggle (default: kernel/;
+                           e.g. kernel/export-d1). It needs a kernel-metadata.json
   pull-results <user>/<slug>   Download kernel output into results/
 EOF
 }
@@ -37,11 +38,14 @@ check() {
     echo "Kaggle → Settings → API → Create New API Token, then place it there." >&2
     exit 1
   }
-  kaggle datasets list -s test-connection >/dev/null 2>&1 || {
-    echo "kaggle.json is present but authentication failed." >&2
-    echo "Regenerate the token from Kaggle → Settings → API and try again." >&2
+  # A public listing succeeds without credentials, so it proves nothing. `kernels list
+  # --mine` needs them, and prints "Authentication required" (exit 0) when they are bad.
+  out="$(kaggle kernels list --mine --page-size 1 2>&1)" || true
+  if printf '%s' "$out" | grep -qi "authentication required"; then
+    echo "The kaggle CLI is installed but not authenticated for private endpoints." >&2
+    echo "Run: kaggle auth login   (or regenerate the token: Kaggle -> Settings -> API)." >&2
     exit 1
-  }
+  fi
   echo "Kaggle CLI OK and authenticated."
 }
 
@@ -101,11 +105,12 @@ EOF
 }
 
 push_kernel() {
-  [ -f "$KERNEL_DIR/kernel-metadata.json" ] || {
-    echo "Missing $KERNEL_DIR/kernel-metadata.json — set id/title/code_file before pushing." >&2
+  local dir="${1:-$KERNEL_DIR}"
+  [ -f "$dir/kernel-metadata.json" ] || {
+    echo "Missing $dir/kernel-metadata.json — set id/title/code_file before pushing." >&2
     exit 1
   }
-  kaggle kernels push -p "$KERNEL_DIR"
+  kaggle kernels push -p "$dir"
 }
 
 pull_results() {
@@ -121,7 +126,7 @@ case "$cmd" in
   push-dataset) push_dataset ;;
   version-dataset) version_dataset "$@" ;;
   push-code) push_code "$@" ;;
-  push-kernel) push_kernel ;;
+  push-kernel) push_kernel "$@" ;;
   pull-results) pull_results "$@" ;;
   *) usage; exit 1 ;;
 esac

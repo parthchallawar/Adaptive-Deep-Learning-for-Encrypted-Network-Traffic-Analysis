@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AnytimeETC: a research project on metadata-only classification of encrypted network flows that decides *early* (after each of the first 30 packets), can answer "unknown", and holds a compute budget under drift. `specs/000-system-overview.md` has the thesis, contributions (C1-C4), hypotheses and module map; `docs/research-analysis.md` has the novelty argument and dataset/Kaggle strategy.
 
-**Current state:** phase 1 (data pipeline, specs 001-004) is done; phase 2 (`plans/phase-2-tracking-kaggle-baselines.md`: specs 014, 015, 005) is in progress. Built so far in phase 2: config/seeding/run identity, the run-directory `Tracker` and MLflow sync (`src/adl_etc/utils/`), `data/prefix_stats.py`, the shared training skeleton (`src/adl_etc/training/`: labels, losses, checkpoints, batches, loop), and the baselines B1 XGBoost / B2 CNN / B3 GRU-LSTM (`src/adl_etc/models/`; B4 is deferred). `src/adl_etc/{inference,service,dashboard}/` are still empty placeholders (next: make the metrics read through `DenseLogits`, then the evaluation entry point) and `kernel/kernel.py` is a stub. Specs 005-020 describe planned work unless their plan says otherwise. The plans hold the build logs and what is blocked (full-year D1 export via a Kaggle kernel; D3 needs the user's manual ISCX registration).
+**Current state:** phase 1 (data pipeline, specs 001-004) is done; phase 2 (`plans/phase-2-tracking-kaggle-baselines.md`: specs 014, 015, 005) is in progress. Built so far in phase 2: config/seeding/run identity, the run-directory `Tracker` and MLflow sync (`src/adl_etc/utils/`), `data/prefix_stats.py`, the shared training skeleton (`src/adl_etc/training/`: labels, losses, checkpoints, batches, loop), and the baselines B1 XGBoost / B2 CNN / B3 GRU-LSTM (`src/adl_etc/models/`; B4 is deferred). `src/adl_etc/{inference,service,dashboard}/` are still empty placeholders (next: make the metrics read through `DenseLogits`, then the evaluation entry point) `kernel/kernel.py` is a stub, and `kernel/export-d1/` (the D1 export kernel, tested against a synthetic mirror) is built but not yet pushed. Specs 005-020 describe planned work unless their plan says otherwise. The plans hold the build logs and what is blocked (full-year D1 export via a Kaggle kernel; D3 needs the user's manual ISCX registration).
 
 ## Commands
 
@@ -29,9 +29,9 @@ Data CLIs (thin wrappers in `scripts/` over logic in `src/adl_etc/data/`):
 python scripts/download_all.py --datasets d3 d4 [--dry-run] [--files GLOB]   # D3 ISCX, D4 USTC
 python scripts/download_iscx.py --base-url <post-registration URL> | --files-from <list>
 python scripts/export_pcap.py ...        # PCAP -> shards (configs/data/pcap.yaml)
-python scripts/export_raw_csv.py --files data/raw/cesnet-tls-year22/flows-*.csv.xz --out-root data/processed --dataset cesnet-tls-year22   # add --verify to check against stats-*.json instead of exporting
+python scripts/export_raw_csv.py --files data/raw/cesnet-tls-year22/flows-*.csv.xz --out-root data/processed --dataset cesnet-tls-year22   # --verify checks against stats-*.json instead of exporting; --sample-rate 0.1 [--sample-seed N] keeps a uniform seeded sample (recorded in meta.json); --check-stats verifies each day against its stats file while exporting
 python scripts/make_unknown_split.py     # one-off open-set class draw for configs/splits/
-./scripts/kaggle_sync.sh check|push-dataset|version-dataset|push-code|push-kernel|pull-results   # see docs/kaggle-workflow.md
+./scripts/kaggle_sync.sh check|push-dataset|version-dataset|push-code|push-kernel [dir]|pull-results   # see docs/kaggle-workflow.md; `check` fails (correctly) when private endpoints answer "Authentication required", even though public downloads still work
 python scripts/mlflow_import.py --src <pulled-run-dirs> [--dry-run]   # run dirs -> results/mlflow.db (idempotent)
 mlflow ui --backend-store-uri sqlite:///results/mlflow.db            # browse; on Windows, killing this leaves uvicorn workers holding the port
 ```
