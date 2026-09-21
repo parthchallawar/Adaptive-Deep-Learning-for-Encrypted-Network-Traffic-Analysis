@@ -62,6 +62,16 @@ def _hash_key(key: object, salt: bytes) -> str:
     return h.hexdigest()
 
 
+_RESERVED_META = frozenset(
+    {
+        "schema_version", "dataset", "period", "n_flows", "n_shards", "shard_sizes",
+        "label_map", "category_map", "ppi_columns", "flowstats_columns", "flowstats_source",
+        "k_max", "exporter_git_commit", "source_manifest_hash", "key_salt", "created_at",
+        "counters",
+    }
+)  # fmt: skip
+
+
 class ShardWriter:
     """Writes flows into fixed-size shards of ``.npy`` arrays.
 
@@ -82,6 +92,7 @@ class ShardWriter:
         source_manifest_hash: str | None = None,
         flowstats_source: str = "adl_etc",
         overwrite: bool = False,
+        extra_meta: dict[str, Any] | None = None,
     ) -> None:
         self._period_dir = Path(root) / dataset / period
         self._dataset = dataset
@@ -92,6 +103,10 @@ class ShardWriter:
         self._allow_unknown = allow_unknown
         self._source_manifest_hash = source_manifest_hash
         self._flowstats_source = flowstats_source
+        self._extra_meta = dict(extra_meta or {})
+        clash = sorted(set(self._extra_meta) & _RESERVED_META)
+        if clash:
+            raise ValueError(f"extra_meta may not override the writer's own fields: {clash}")
 
         if self._period_dir.exists() and any(self._period_dir.iterdir()):
             if not overwrite:
@@ -126,6 +141,13 @@ class ShardWriter:
 
     def _count(self, name: str, n: int = 1) -> None:
         self._counters[name] = self._counters.get(name, 0) + n
+
+    def add_counter(self, name: str, n: int) -> None:
+        """Add ``n`` to a named counter recorded in ``meta.json`` (rows seen before
+        an exporter's own filtering, for instance)."""
+        if self._closed:
+            raise RuntimeError("add_counter() called on a closed ShardWriter")
+        self._count(name, int(n))
 
     # -- writing --------------------------------------------------------
 
@@ -266,6 +288,7 @@ class ShardWriter:
             "key_salt": self._salt,
             "created_at": now_iso(),
             "counters": self._counters,
+            **self._extra_meta,
         }
         (self._period_dir / "meta.json").write_text(
             json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8"

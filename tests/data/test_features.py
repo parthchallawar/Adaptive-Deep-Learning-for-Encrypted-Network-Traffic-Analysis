@@ -389,3 +389,36 @@ def test_stream_stops_at_k_max():
     for _ in range(P.K_MAX + 5):
         result = st.push(1, P.DIR_FWD, 1, 0)
     assert result["ppi_len"] == P.K_MAX
+
+
+def test_fit_many_equals_fit_on_the_same_flows_in_one_set(tmp_path):
+    """A multi-week training period is fit as one population, not averaged per week."""
+    from adl_etc.data.tensors import ShardSet, ShardWriter
+
+    label_map = {"a": 0, "b": 1}
+    rng = np.random.default_rng(3)
+    flows = [make_flow(rng, ts=float(i)) for i in range(60)]
+    layout = (("w1", flows[:10]), ("w2", flows[10:45]), ("w3", flows[45:]), ("all", flows))
+    for name, chunk in layout:
+        with ShardWriter(tmp_path, "synthetic", name, label_map=label_map) as w:
+            for i, fl in enumerate(chunk):
+                w.add(fl, label=i % 2, category=0)
+    parts = [ShardSet.open(tmp_path / "synthetic" / n) for n in ("w1", "w2", "w3")]
+    whole = ShardSet.open(tmp_path / "synthetic" / "all")
+    try:
+        many = F.Standardizer.fit_many(parts)
+        one = F.Standardizer.fit(whole)
+        assert many.hash == one.hash
+        np.testing.assert_array_equal(many.cont_mean, one.cont_mean)
+        np.testing.assert_array_equal(many.flowstats_std, one.flowstats_std)
+        # ...and it is not the mean of the per-week means (weeks differ in size).
+        per_week = np.mean([F.Standardizer.fit(p).cont_mean for p in parts], axis=0)
+        assert not np.allclose(many.cont_mean, per_week, rtol=1e-12, atol=0)
+    finally:
+        for s in (*parts, whole):
+            s.close()
+
+
+def test_fit_many_rejects_no_shard_sets():
+    with pytest.raises(ValueError, match="no shard sets"):
+        F.Standardizer.fit_many([])

@@ -15,6 +15,7 @@ definition D3/D4 use, computed once, not duplicated for a second source.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -278,7 +279,11 @@ class ExportSummary:
     """period -> n_flows written to that week's shard set."""
     dropped_zero_ppi: int = 0
     rows_processed: int = 0
+    """Rows read from the CSVs, before sampling."""
     wall_seconds: float = 0.0
+    sample_rate: float = 1.0
+    verified_days: int = 0
+    """Days checked against their ``stats-*.json`` during the export."""
 
     @property
     def n_flows(self) -> int:
@@ -295,9 +300,11 @@ class ExportSummary:
         lines = [
             header,
             f"  flows: {self.n_flows} written, {self.dropped_zero_ppi} dropped (zero PPI)",
-            f"  rows: {self.rows_processed} in {self.wall_seconds:.1f}s "
-            f"({self.rows_per_second:,.0f} rows/s)",
+            f"  rows: {self.rows_processed} read in {self.wall_seconds:.1f}s "
+            f"({self.rows_per_second:,.0f} rows/s), sample rate {self.sample_rate:g}",
         ]
+        if self.verified_days:
+            lines.append(f"  verified against stats-*.json: {self.verified_days} day(s), all OK")
         for week in sorted(self.weeks):
             lines.append(f"    {week}: {self.weeks[week]} flows")
         return "\n".join(lines)
@@ -323,6 +330,36 @@ def date_from_filename(path: Path) -> str:
         raise ValueError(f"{path}: expected a flows-YYYYMMDD.csv.xz file name")
     digits = name[len("flows-") : -len(".csv.xz")]
     return f"{digits[0:4]}-{digits[4:6]}-{digits[6:8]}"
+
+
+class VerificationError(RuntimeError):
+    """A day of the mirror disagrees with its own shipped ``stats-*.json``."""
+
+
+def sample_rng(path: Path, seed: int) -> np.random.Generator:
+    """The row-sampling stream for one source file. Seeded from the file's *name*
+    (not its directory, which differs between this machine and Kaggle's mount) so
+    re-exporting one day reproduces that day's sample exactly, and independent of
+    the other days so a partial re-export stays consistent with the rest."""
+    digest = hashlib.sha256(f"{int(seed)}:{path.name}".encode()).digest()
+    return np.random.default_rng(int.from_bytes(digest[:8], "big"))
+
+
+def _check_against_stats(n_rows: int, seen_apps: set[str], stats_path: Path) -> list[str]:
+    """Spec 001's two mandatory Path-B checks for one day; returns the problems
+    (empty when the day agrees with its shipped statistics)."""
+    if not stats_path.exists():
+        return [f"missing stats file {stats_path}"]
+    stats = json.loads(stats_path.read_text(encoding="utf-8"))
+    expected_total = stats.get("global", {}).get("total-saved")
+    expected_apps = set(stats.get("apps", {}))
+    problems: list[str] = []
+    if expected_total is not None and n_rows != expected_total:
+        problems.append(f"row count {n_rows} != stats total-saved {expected_total}")
+    unexpected_apps = seen_apps - expected_apps
+    if unexpected_apps:
+        problems.append(f"APP values not in stats.apps: {sorted(unexpected_apps)}")
+    return problems
 
 
 def _row_arrays(
@@ -382,6 +419,9 @@ def export_dataset(
     max_flows: int = 500_000,
     manifest_path: str | Path = M.DEFAULT_MANIFEST_PATH,
     overwrite: bool = False,
+    sample_rate: float = 1.0,
+    sample_seed: int = 0,
+    verify: bool = False,
     log: Callable[[str], None] = print,
 ) -> ExportSummary:
     """Streams every file in ``csv_paths`` and writes shards partitioned by
@@ -400,7 +440,25 @@ def export_dataset(
     (:func:`discover_class_maps`) over exactly the files given, so callers
     processing the corpus in batches must pass every file for a given map
     together in one call, or pass an explicit map built once up front.
+
+    ``sample_rate < 1`` keeps each row independently with that probability (phase-2
+    plan F5: 10% of the full year is what fits Kaggle's working cap). It is applied
+    to the parsed CSV chunk *before* the expensive per-row PPI parsing, so a sampled
+    export is cheaper and not merely smaller. The draw comes from :func:`sample_rng`
+    and is consumed in row order, so it does not depend on ``chunksize``. Sampling
+    is uniform, never per class, so class priors and their drift survive.
+    ``sample_rate == 1`` takes the unsampled path unchanged. The rate, the seed and
+    the pre-sampling row count go into every ``meta.json``, so a sampled week can
+    never be mistaken for a full one.
+
+    ``verify`` checks each file's pre-sampling row count and app list against its
+    sibling ``stats-*.json`` in the same pass and raises :class:`VerificationError`
+    on the first disagreement (spec 001: a mirror that fails its own statistics is
+    not a corpus to train on). Shard sets written before the failure must then be
+    discarded.
     """
+    if not 0.0 < sample_rate <= 1.0:
+        raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
     csv_paths = list(csv_paths)
     if label_map is None or category_map is None:
         label_map, category_map = discover_class_maps(csv_paths)
@@ -414,15 +472,20 @@ def export_dataset(
     except KeyError:
         pass  # no manifest entry yet is not fatal, same as export_pcap.py
 
+    weeks_of = [iso_week(date_from_filename(p)) for p in csv_paths]
+    last_index = {week: i for i, week in enumerate(weeks_of)}  # last file of each week
+    extra_meta = {"sample_rate": float(sample_rate), "sample_seed": int(sample_seed)}
+
     writers: dict[str, ShardWriter] = {}
     week_flow_counts: dict[str, int] = {}
     dropped_zero_ppi = 0
     rows_processed = 0
+    verified_days = 0
 
     t0 = time.perf_counter()
     try:
         for session_id, path in enumerate(csv_paths):
-            week = iso_week(date_from_filename(path))
+            week = weeks_of[session_id]
             writer = writers.get(week)
             if writer is None:
                 writer = ShardWriter(
@@ -435,10 +498,23 @@ def export_dataset(
                     source_manifest_hash=source_manifest_hash,
                     flowstats_source="adl_etc",
                     overwrite=overwrite,
+                    extra_meta=extra_meta,
                 )
+                writer.add_counter("rows_before_sampling", 0)  # present even for an empty week
                 writers[week] = writer
+            rng = sample_rng(path, sample_seed) if sample_rate < 1.0 else None
+            file_rows = 0
+            file_apps: set[str] = set()
             for chunk in _read_csv_chunks(path, usecols=USE_COLUMNS, chunksize=chunksize):
                 rows_processed += len(chunk)
+                file_rows += len(chunk)
+                writer.add_counter("rows_before_sampling", len(chunk))
+                if verify:
+                    file_apps.update(chunk["APP"].unique().tolist())
+                if rng is not None:
+                    chunk = chunk[rng.random(len(chunk)) < sample_rate]
+                    if chunk.empty:
+                        continue
                 cols = _row_arrays(
                     chunk, label_map=label_map, category_map=category_map, session_id=session_id
                 )
@@ -449,6 +525,13 @@ def export_dataset(
                     len(batch["ppi_len"]) - n_zero
                 )
                 writer.add_batch(batch)
+            if verify:
+                problems = _check_against_stats(file_rows, file_apps, _stats_path_for(path))
+                if problems:
+                    raise VerificationError(f"{path}: " + "; ".join(problems))
+                verified_days += 1
+            if last_index[week] == session_id:
+                writer.close()  # no later file belongs to this week: free its buffers now
         for writer in writers.values():
             writer.close()
     except BaseException:
@@ -467,6 +550,8 @@ def export_dataset(
         dropped_zero_ppi=dropped_zero_ppi,
         rows_processed=rows_processed,
         wall_seconds=wall,
+        sample_rate=float(sample_rate),
+        verified_days=verified_days,
     )
     log(summary.render())
     return summary
@@ -496,25 +581,15 @@ def verify_day(csv_path: Path, stats_path: Path | None = None) -> VerifyResult:
     this project has not downloaded a DataZoo HDF5 to compare against, per
     spec 001's own "when it is available locally" wording."""
     stats_path = stats_path or _stats_path_for(csv_path)
-    problems: list[str] = []
     if not stats_path.exists():
         return VerifyResult(csv_path, ok=False, problems=[f"missing stats file {stats_path}"])
-    stats = json.loads(stats_path.read_text(encoding="utf-8"))
-    expected_total = stats.get("global", {}).get("total-saved")
-    expected_apps = set(stats.get("apps", {}))
-
     n_rows = 0
     seen_apps: set[str] = set()
     for chunk in _read_csv_chunks(csv_path, usecols=["APP"], chunksize=200_000):
         n_rows += len(chunk)
         seen_apps.update(chunk["APP"].unique().tolist())
 
-    if expected_total is not None and n_rows != expected_total:
-        problems.append(f"row count {n_rows} != stats total-saved {expected_total}")
-    unexpected_apps = seen_apps - expected_apps
-    if unexpected_apps:
-        problems.append(f"APP values not in stats.apps: {sorted(unexpected_apps)}")
+    problems = _check_against_stats(n_rows, seen_apps, stats_path)
+    ok = not problems
     problems.append("DataZoo field-level comparison skipped: no local HDF5 to compare against")
-
-    ok = n_rows == expected_total and not unexpected_apps
     return VerifyResult(csv_path, ok=ok, problems=problems)
