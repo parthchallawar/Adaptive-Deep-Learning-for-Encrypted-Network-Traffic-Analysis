@@ -25,7 +25,25 @@ EOF
 }
 
 kaggle_username() {
-  python -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'].lower())"
+  # Order: explicit env, then the legacy token file, then the owner of the account's own
+  # kernels (works with an OAuth login, which stores no plain username file).
+  if [ -n "${KAGGLE_USERNAME:-}" ]; then
+    printf '%s
+' "$KAGGLE_USERNAME" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+  if [ -f "$HOME/.kaggle/kaggle.json" ]; then
+    python -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'].lower())"
+    return
+  fi
+  local owner
+  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | sed -n '2p' | cut -d, -f1 | cut -d/ -f1)"
+  [ -n "$owner" ] || {
+    echo "Cannot tell your Kaggle username; set KAGGLE_USERNAME." >&2
+    exit 1
+  }
+  printf '%s
+' "$owner" | tr '[:upper:]' '[:lower:]'
 }
 
 check() {
@@ -33,9 +51,8 @@ check() {
     echo "kaggle CLI not found. Install with: pip install kaggle" >&2
     exit 1
   }
-  [ -f "$HOME/.kaggle/kaggle.json" ] || {
-    echo "Missing $HOME/.kaggle/kaggle.json. Create an API token at" >&2
-    echo "Kaggle → Settings → API → Create New API Token, then place it there." >&2
+  [ -f "$HOME/.kaggle/kaggle.json" ] || [ -f "$HOME/.kaggle/credentials.json" ] || {
+    echo "No Kaggle credentials found. Run: kaggle auth login" >&2
     exit 1
   }
   # A public listing succeeds without credentials, so it proves nothing. `kernels list

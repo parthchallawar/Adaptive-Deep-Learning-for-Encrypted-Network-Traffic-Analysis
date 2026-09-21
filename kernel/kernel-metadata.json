@@ -1,5 +1,5 @@
 {
-  "id": "parthrchallawar/adl-encrypted-traffic-train",
+  "id": "parthchallawar/adl-encrypted-traffic-train",
   "title": "ADL Encrypted Traffic - Train",
   "code_file": "kernel.py",
   "language": "python",
@@ -8,7 +8,7 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
-    "parthrchallawar/adl-encrypted-traffic-processed"
+    "parthchallawar/adl-encrypted-traffic-processed"
   ],
   "competition_sources": [],
   "kernel_sources": []

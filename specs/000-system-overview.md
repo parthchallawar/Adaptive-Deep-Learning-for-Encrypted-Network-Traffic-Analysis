@@ -103,7 +103,7 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 ## Scope decisions (owner, 2026-09-17)
 
 - **Containerised deployment is out of scope.** Spec 019 is deferred; the service, dashboard, database and MLflow store all run as local processes. The Linux-only `ipfixprobe` exporter is therefore optional too (spec 002 keeps a pure-Python backend as the default path).
-- **Kaggle credentials are configured** at `~/.kaggle/kaggle.json` (account `parthrchallawar`); the CLI authenticates successfully.
+- **Kaggle credentials are configured** at `~/.kaggle/kaggle.json` (account `parthchallawar`); the CLI authenticates successfully.
 
 ## Open questions
 

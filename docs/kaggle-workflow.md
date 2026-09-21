@@ -12,18 +12,24 @@ resumable kernels, the two data routes) is specified in
 
 ## Setup
 
-**Status (2026-09-17): already configured.** Kaggle CLI 2.2.4 is installed and
-`~/.kaggle/kaggle.json` authenticates as account `parthrchallawar`. The metadata
-files already carry the real slugs, so the steps below are for reference or for
-setting this up on another machine.
+**Status (2026-09-22): authenticated by OAuth.** Kaggle CLI 2.2.4 is installed and
+`kaggle auth login` has cached credentials in `~/.kaggle/credentials.json` for account
+`parthchallawar`. The metadata files carry that account's slugs, so the steps below are
+for reference or for setting this up on another machine.
+
+**Trap (hit on 2026-09-21):** a legacy `~/.kaggle/kaggle.json` that is no longer valid
+takes precedence over the OAuth login. Public downloads still work with it, but every
+private call (`datasets status`, `kernels list --mine`, any push) answers "Authentication
+required". If that happens, move the old file away, then run `./scripts/kaggle_sync.sh check`.
 
 ```
 pip install kaggle
 ```
 
-Create an API token at Kaggle → Settings → API → Create New API Token, and
-place the downloaded `kaggle.json` at `~/.kaggle/kaggle.json` (`%USERPROFILE%\.kaggle\kaggle.json`
-on Windows). Never commit this file — it's already excluded via `.gitignore`.
+Either `kaggle auth login` (OAuth, preferred), or create an API token at Kaggle →
+Settings → API → Create New API Token and place it at `~/.kaggle/kaggle.json`
+(`%USERPROFILE%\.kaggle\kaggle.json` on Windows). Never commit credentials — both are
+excluded via `.gitignore`.
 
 Verify it's working:
 
@@ -45,7 +51,7 @@ Verify it's working:
 ## Dataset: data/processed/ → Kaggle
 
 `data/processed/dataset-metadata.json` holds the dataset's `title`/`id`
-(already set to `parthrchallawar/adl-encrypted-traffic-processed`).
+(already set to `parthchallawar/adl-encrypted-traffic-processed`).
 
 ```
 ./scripts/kaggle_sync.sh push-dataset          # first upload only

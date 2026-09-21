@@ -1,5 +1,5 @@
 {
-  "id": "parthrchallawar/adl-export-d1",
+  "id": "parthchallawar/adl-export-d1",
   "title": "ADL Export D1",
   "code_file": "kernel.py",
   "language": "python",
@@ -9,7 +9,7 @@
   "enable_internet": true,
   "dataset_sources": [
     "pranjalkar99/cesnet-22",
-    "parthrchallawar/adl-encrypted-traffic-code"
+    "parthchallawar/adl-encrypted-traffic-code"
   ],
   "competition_sources": [],
   "kernel_sources": []

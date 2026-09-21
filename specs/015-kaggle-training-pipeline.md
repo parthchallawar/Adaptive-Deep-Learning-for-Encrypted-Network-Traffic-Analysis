@@ -28,7 +28,7 @@ Python 3.12.13, torch 2.10.0+cu128, numpy 2.0.2, pandas 2.3.3, pyarrow 24.0.0, s
 - **The image is older than the dev machine** (local: numpy 2.5.3, pandas 3.0.6, pyarrow 25, torch 2.14). `pyproject.toml`'s floors (numpy >= 2.0, pandas >= 2.2, pyarrow >= 16, torch >= 2.4, scikit-learn >= 1.5, xgboost >= 2.1) all hold. The full suite was run in a throwaway venv pinned to Kaggle's exact versions (no torch, no mlflow, as on Kaggle): 453 passed, 16 skipped, and the skips are exactly the tests that need torch or mlflow. Re-run this check when the image changes or a new dependency is added.
 - **Nothing on the training path needs the missing packages.** Every module a kernel imports (`data/{ppi,flows,tensors,features,prefix_stats,manifest,cesnet_csv}`, `evaluation/*`, `utils/*`) imports with `dpkt`, `py7zr` and `mlflow` blocked. Only the PCAP and downloader modules need `dpkt`/`py7zr`. This is also why `tracking.py` never imports mlflow (spec 014).
 
-Not yet verified: that a kernel pushed with the CLI gets internet the way an interactive notebook does, and the P100 option.
+Verified 2026-09-22: a kernel pushed with the CLI gets internet (HTTP 200); datasets mount at `/kaggle/input/datasets/<owner>/<slug>/`; a CPU kernel has 4 CPUs and 31.3 GiB RAM. Not yet verified: the P100 option.
 
 A training job that assumes more than this (long sessions, workers, big models) will fail or burn the quota. The pipeline must be resumable, quota-aware, and reproducible from the repository.
 
@@ -48,7 +48,7 @@ A training job that assumes more than this (long sessions, workers, big models) 
 
 ### Credentials (confirmed 2026-09-17)
 
-`~/.kaggle/kaggle.json` holds the token for account `parthrchallawar`; Kaggle CLI 2.2.4 is installed and authenticates. `data/processed/dataset-metadata.json` and `kernel/kernel-metadata.json` carry the real slugs (`parthrchallawar/adl-encrypted-traffic-processed`, `parthrchallawar/adl-encrypted-traffic-train`). The token is gitignored and must never be printed or committed.
+`~/.kaggle/kaggle.json` holds the token for account `parthchallawar`; Kaggle CLI 2.2.4 is installed and authenticates. `data/processed/dataset-metadata.json` and `kernel/kernel-metadata.json` carry the real slugs (`parthchallawar/adl-encrypted-traffic-processed`, `parthchallawar/adl-encrypted-traffic-train`). The token is gitignored and must never be printed or committed.
 
 ### Data packaging
 

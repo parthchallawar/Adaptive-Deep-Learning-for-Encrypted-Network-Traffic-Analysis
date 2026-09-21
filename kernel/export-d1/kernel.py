@@ -1,14 +1,14 @@
-"""Kaggle CPU kernel: CESNET-TLS-Year22 weeks 11-52 -> 10%-sampled shard sets.
+"""Kaggle CPU kernel: CESNET-TLS-Year22 weeks 11-52 -> 3%-sampled shard sets.
 
 Phase-2 plan T3. Mounts the mirror (`pranjalkar99/cesnet-22`) and the project code
-dataset, exports with ``--sample-rate 0.10`` while checking every day against its
+dataset, exports with ``--sample-rate 0.03`` while checking every day against its
 own ``stats-*.json`` (before sampling), then fits the Standardizer on the training
 weeks and loads ``configs/splits/d1_main.yaml`` for real, so the four leakage rules
 are asserted against the actual corpus. Needs no GPU quota.
 
-``MODE = "probe"`` does the same on three days to answer the cheap questions first
+``ADL_EXPORT_MODE=probe`` does the same on three days to answer the cheap questions first
 (does the mount look like we expect, is there internet, how fast is it, how big is a
-week); ``MODE = "full"`` is the whole 42-week run. Outputs (under /kaggle/working):
+week); the default, ``full``, is the whole 42-week run. The probe ran on 2026-09-22. Outputs (under /kaggle/working):
 
     shards/cesnet-tls-year22/WEEK-2022-NN/   the shard sets
     standardizer.json                        fit on weeks 11-26 only
@@ -26,9 +26,13 @@ import time
 import urllib.request
 from pathlib import Path
 
-MODE = os.environ.get("ADL_EXPORT_MODE", "probe")  # "probe" | "full"
+MODE = os.environ.get("ADL_EXPORT_MODE", "full")  # "probe" (3 days) | "full"
 
-SAMPLE_RATE = 0.10
+# 3%, not the plan's original 10%: the probe (2026-09-22) and the mirror's weekly stats
+# put weeks 11-52 at 417.5M flows, not ~130M. 10% would be 41.8M flows (16 GiB, and a
+# Standardizer fit needing ~30 GB RAM); 3% is 12.5M flows (~4.8 GiB, 6M train flows) and
+# keeps 172 of 180 classes above spec 004's 100-test-flow floor (10% keeps 173).
+SAMPLE_RATE = 0.03
 SAMPLE_SEED = 0
 FIRST_WEEK, LAST_WEEK = 11, 52
 TRAIN_WEEKS = range(11, 27)  # spec 004: the standardizer is fit on these only
@@ -208,11 +212,11 @@ def finish_full(cesnet_csv, tensors, code_root: Path) -> None:
     bad = {
         w: c["kept_fraction"]
         for w, c in REPORT["weeks"].items()
-        if c["kept_fraction"] is None or abs(c["kept_fraction"] - SAMPLE_RATE) > 0.01
+        if c["kept_fraction"] is None or abs(c["kept_fraction"] - SAMPLE_RATE) > 0.05 * SAMPLE_RATE
     }
     REPORT["weeks_off_the_sample_rate"] = bad
     if bad:
-        log(f"WARNING: weeks whose kept fraction is not {SAMPLE_RATE} +/- 0.01: {bad}")
+        log(f"WARNING: weeks whose kept fraction is not {SAMPLE_RATE} +/- 5%: {bad}")
 
     # -- the Standardizer, fit on the training weeks only -------------------------------
     train = [tensors.ShardSet.open(OUT / DATASET / f"WEEK-2022-{w:02d}") for w in TRAIN_WEEKS]

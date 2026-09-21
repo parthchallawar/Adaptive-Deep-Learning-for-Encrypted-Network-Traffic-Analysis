@@ -111,7 +111,7 @@ def test_full_run_exports_verifies_fits_the_standardizer_and_loads_the_real_spli
     assert report["mirror_files_selected"] == 42
     assert report["export"]["verified_days"] == 42
     assert sorted(report["weeks"]) == [f"WEEK-2022-{w:02d}" for w in range(11, 53)]
-    assert all(c["sample_rate"] == 0.10 for c in report["weeks"].values())
+    assert all(c["sample_rate"] == mod.SAMPLE_RATE for c in report["weeks"].values())
     assert all(c["rows_before_sampling"] == ROWS_PER_DAY for c in report["weeks"].values())
 
     # the Standardizer exists, is fit, and is what the split config now points at
