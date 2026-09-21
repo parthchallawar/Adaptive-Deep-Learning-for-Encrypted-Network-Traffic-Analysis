@@ -25,21 +25,25 @@ The research claims are comparative. Without strong, fairly tuned baselines the 
 
 ### B1 XGBoost on flow statistics
 
-- Input: 43 standardised flowstats (spec 003). For fixed-K evaluation, statistics are recomputed from the first K packets (`prefix_flowstats(K)`), giving an honest "early" tabular baseline.
+- Input: the `FLOWSTATS_DIM` = 46 flow statistics (spec 003; DataZoo's own vector has 43 and is a different vector, never mixed). At every K the statistics come from `adl_etc.data.prefix_stats.prefix_flowstats(ppi, ppi_len, K)`, which recomputes **every** column from the first K PPI entries alone and never reads the stored whole-flow vector, giving an honest "early" tabular baseline. Consequences (tested): `prefix_flowstats(30)` does **not** equal the stored `flowstats` (the PPI holds only payload packets, so `PACKETS`/`BYTES`/`DURATION` count those; only the PPI-derived columns `PPI_LEN`, `PPI_DURATION`, `PPI_ROUNDTRIPS` and the four histograms match exactly), and only `FLAG_PSH` is recoverable from the PPI, so the other five flag columns are 0. B1 is trained once per K in the spec-004 grid. Standardisation is a no-op for trees; a model that needs it must fit its own standardiser on prefix features at the same K, since the shipped `Standardizer` is fit on whole-flow statistics.
 - `xgboost.XGBClassifier(tree_method="hist", n_estimators<=2000, early_stopping_rounds=50)`, class weights inverse-frequency-capped.
 - CPU, local. Also the model behind the dashboard's "explain" panel (feature importances) if time permits.
 
 ### B2 1D-CNN
 
+- **Implemented** (`adl_etc.models.baselines.cnn`, 0.445M params at 150 classes). It is trained on full flows only, so at fixed K it sees zero-padded slots it never met in training and its K=1 accuracy is at chance on real D4 (0.227 vs a 0.222 majority rate, 0.567 at K=3): a per-K evaluation of a full-flow model, and the gap prefix-aware training targets. Batch norm is masked (`MaskedBatchNorm1d`) because real flows average about 7 real packets in 30 slots.
 - Input: continuous sequence [30, 4] (spec 003). Three Conv1d blocks (channels 128, 192, 256; kernels 5, 5, 3), BatchNorm, GELU, masked global average + max pooling, MLP head. About 0.4M params.
 - Fixed-K evaluation by zero-padding beyond K (mask-aware pooling).
 
 ### B3 GRU / LSTM
 
 - Input as B2. Linear stem 4 to 128, two-layer GRU (hidden 256) or LSTM; per-step logits from the hidden state so that fixed-K and adaptive evaluation come from one pass. This mirrors CAPE-Net's backbone, which makes the CAPE-style policy baseline faithful. About 0.6M params.
-- Trained with multi-prefix loss (spec 008) so the comparison to our Transformer isolates the architecture, not the training recipe.
+- Trained with multi-prefix loss (spec 008) so the comparison to our Transformer isolates the architecture, not the training recipe. The minimal form of that loss, `adl_etc.training.losses.multi_prefix_ce` (pooled masked mean of per-position cross-entropy), is built with the shared training loop; spec 008 extends it rather than replacing it.
 
 ### B4 CESNET 30pktTCNET (public pretrained encoder)
+
+**Deferred to phase 3 (2026-09-21):** needs the `datazoo`/`cesnet-models` extras and public weights, its DataZoo-batch adapter test needs the Path A HDF5 (not on disk), and its D2 sanity check needs D2 (not acquired).
+
 
 - `cesnet_models.model_30pktTCNET_256(weights=CESNET_QUIC22_Week46_Domains)`; 1.0M params, 256-d embedding; input PPI [30, 3] (IPT, DIR, SIZE) in DataZoo scaling.
 - Two variants: frozen encoder + linear probe; full fine-tune. Non-causal (temporal CNN with global pooling), so fixed-K evaluation needs one pass per K on zero-padded prefixes.
@@ -80,7 +84,7 @@ AdamW, weight decay 1e-4, OneCycle LR (peak 3e-3 for CNN/RNN, 1e-3 for Transform
 ## Testing
 
 - Shape/forward tests for each model with a batch of 8.
-- Overfit test: each model reaches > 99% train accuracy on a 512-flow subset in 200 steps.
+- Overfit test: each model must be able to fit a tiny training set, run with the shared loop (`adl_etc.training.loop.fit`). **Corrected 2026-09-21:** the original wording, "> 99% train accuracy on a 512-flow subset in 200 steps", is unachievable on raw D4 for any model: real D4 is 90% duplicated (41,992 distinct PPIs in 403,394 flows, label-majority ceiling 0.9126) and even distinct flows contain near-clashes (a 512-flow sample of distinct PPIs: 234 flows with a differently-labelled neighbour within 0.5, so a small MLP reaches 0.955 after 1,600 steps and 0.975 after 3,200). The strict > 99% / 200-step check therefore runs on **synthetic separable flows** (`tests/training/util.make_flows`), where it isolates the model and loop from data ambiguity; the real-data check asserts what real D4 allows (train accuracy > 0.9 and still climbing on 512 distinct-PPI flows after 1,600 steps, `tests/training/test_real_d4.py`).
 - Policy tests: P-ECHO with tau=0 commits at K=1; tau=1 never commits before K_max.
 - Adapter test for B4 against a DataZoo batch (marked `slow`).
 

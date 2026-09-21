@@ -1,0 +1,25 @@
+# B2: 1D-CNN (spec 005). Non-causal: evaluated once per K on spec 004's grid.
+model:
+  name: cnn
+  channels: [128, 192, 256]
+  kernels: [5, 5, 3]
+  head_hidden: 256
+  dropout: 0.1
+
+# Spec 005's shared recipe; peak LR 3e-3 for CNN/RNN, 1e-3 for Transformers.
+train:
+  epochs: 20
+  batch_size: 4096
+  lr: 0.003
+  weight_decay: 0.0001
+  label_smoothing: 0.1
+  patience: 4
+  balanced_cap: 10.0
+  amp: true
+
+# Bounded random search: 20 trials, tuned on val (spec 005). Keys are dotted config paths.
+search:
+  train.lr: {loguniform: [0.0005, 0.01]}
+  train.weight_decay: {loguniform: [0.00001, 0.001]}
+  model.dropout: {choice: [0.0, 0.1, 0.2, 0.3]}
+  model.head_hidden: {choice: [128, 256, 512]}
