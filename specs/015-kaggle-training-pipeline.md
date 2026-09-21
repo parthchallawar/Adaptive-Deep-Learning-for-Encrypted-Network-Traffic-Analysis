@@ -12,14 +12,23 @@ All GPU work runs on Kaggle's free tier. The constraints that shape the design (
 
 | Constraint | Value (Sept 2026, per Kaggle docs/announcements) |
 |---|---|
-| GPU quota | 30 h per week, shared across P100 and T4 x2 |
-| Max session | 12 h for CPU/GPU notebooks ("Save & Run All" runs in background, no idle timeout, 12 h cap) |
+| GPU quota | 30 h per week, shared across P100 and T4 x2. **Verified 2026-09-21** on the account's Quotas page: 30 hrs (00:00 used). The page shows the total but not the reset period, so "per week" is still Kaggle's documented behaviour, not observed |
+| Max session | 12 h for CPU/GPU notebooks ("Save & Run All" runs in background, no idle timeout, 12 h cap). **Verified 2026-09-21:** the interactive session panel shows "12 hours" as the session maximum |
 | Interactive idle timeout | about 60 min |
-| GPU | P100 16 GB, or 2 x T4 16 GB (fp16 tensor cores on T4) |
-| RAM | about 29 GB in GPU sessions |
-| Disk | 20 GB persisted in `/kaggle/working`; datasets mounted read-only under `/kaggle/input` |
-| Datasets | private quota 200 GB; a dataset version is immutable |
-| Internet | must be enabled per notebook; requires a phone-verified account |
+| GPU | P100 16 GB, or 2 x T4 (fp16 tensor cores on T4). **Verified 2026-09-21:** a "GPU T4 x2" session shows two GPUs at 15 GiB each; the P100 option was not checked. Note a GPU session counts against the quota while it is open, even when idle |
+| RAM | about 29 GB in GPU sessions. **Verified 2026-09-21:** max 30 GiB |
+| Disk | 20 GB persisted in `/kaggle/working` (stated in the notebook template itself); datasets mounted read-only under `/kaggle/input`. **Verified 2026-09-21:** the session panel shows 57.6 GiB max total disk, so the 20 GB limit is on saved *output*, and scratch beyond it can live in `/kaggle/temp/` |
+| Datasets | private quota **214.75 GB** (= 200 GiB; verified 2026-09-21, 0 B used, so no private dataset has been uploaded yet); a dataset version is immutable. Private models: same 214.75 GB, unused. TPU 20 h, unused, irrelevant |
+| Internet | must be enabled per notebook; requires a phone-verified account. **Partly verified 2026-09-21:** in an interactive notebook the Settings menu offers "Turn off internet", i.e. internet is currently on for this account. Not yet verified: that a CLI-pushed kernel gets it, and which packages the image already has |
+
+### What the Kaggle image actually has (verified 2026-09-21, interactive GPU T4 x2 notebook)
+
+Python 3.12.13, torch 2.10.0+cu128, numpy 2.0.2, pandas 2.3.3, pyarrow 24.0.0, scikit-learn 1.6.1, xgboost 3.2.0, omegaconf 2.3.0, tqdm 4.67.3. **Not installed: `mlflow`, `dpkt`, `py7zr`.** Outbound HTTPS works (pypi.org and github.com both returned 200). `/kaggle/working` had 19.5 GiB free, matching the 20 GB output cap. Two consequences:
+
+- **The image is older than the dev machine** (local: numpy 2.5.3, pandas 3.0.6, pyarrow 25, torch 2.14). `pyproject.toml`'s floors (numpy >= 2.0, pandas >= 2.2, pyarrow >= 16, torch >= 2.4, scikit-learn >= 1.5, xgboost >= 2.1) all hold. The full suite was run in a throwaway venv pinned to Kaggle's exact versions (no torch, no mlflow, as on Kaggle): 453 passed, 16 skipped, and the skips are exactly the tests that need torch or mlflow. Re-run this check when the image changes or a new dependency is added.
+- **Nothing on the training path needs the missing packages.** Every module a kernel imports (`data/{ppi,flows,tensors,features,prefix_stats,manifest,cesnet_csv}`, `evaluation/*`, `utils/*`) imports with `dpkt`, `py7zr` and `mlflow` blocked. Only the PCAP and downloader modules need `dpkt`/`py7zr`. This is also why `tracking.py` never imports mlflow (spec 014).
+
+Not yet verified: that a kernel pushed with the CLI gets internet the way an interactive notebook does, and the P100 option.
 
 A training job that assumes more than this (long sessions, workers, big models) will fail or burn the quota. The pipeline must be resumable, quota-aware, and reproducible from the repository.
 
@@ -123,5 +132,5 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 
 ## Open questions
 
-- Whether kernels on this account may enable internet (phone verification). Not blocking: the code-as-dataset route and the mirror-mount route both work without it. To be settled by the first kernel push.
-- Preferred GPU (T4 x2 to run two seeds concurrently vs P100 single): decide after measuring throughput in the first smoke run.
+- Whether kernels on this account may enable internet. **Partly answered 2026-09-21:** an interactive notebook has internet on and reaches pypi.org and github.com. Still to confirm: that a CLI-pushed kernel (`enable_internet: true` in `kernel-metadata.json`) gets it too. Not blocking: code-as-dataset needs none, and the only missing packages on the training path are ones it doesn't import.
+- Preferred GPU (T4 x2 to run two seeds concurrently vs P100 single): T4 x2 is confirmed available (two 15 GiB GPUs, 30 GiB RAM); the P100 option has not been checked. Decide after measuring throughput in the first smoke run.

@@ -70,7 +70,19 @@ push_code() {
   cp -r src "$CODE_STAGE_DIR/src"
   [ -d configs ] && cp -r configs "$CODE_STAGE_DIR/configs"
   find "$CODE_STAGE_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
-  git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null || true
+  # Provenance sidecars, read by adl_etc.utils.runinfo.code_provenance() since a
+  # kernel has no .git. GIT_DIRTY covers only what is shipped (src/, configs/):
+  # 1 if it differs from the commit, 0 if identical. When git can't say, both
+  # files are left out and the run is treated as dirty rather than as clean.
+  if git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null; then
+    if [ -n "$(git status --porcelain -- src configs)" ]; then
+      echo 1 > "$CODE_STAGE_DIR/GIT_DIRTY"
+    else
+      echo 0 > "$CODE_STAGE_DIR/GIT_DIRTY"
+    fi
+  else
+    rm -f "$CODE_STAGE_DIR/GIT_COMMIT"
+  fi
 
   cat > "$CODE_STAGE_DIR/dataset-metadata.json" <<EOF
 {
