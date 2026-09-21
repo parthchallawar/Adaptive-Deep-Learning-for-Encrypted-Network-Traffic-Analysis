@@ -13,10 +13,18 @@ without their explicit, per-use consent is not something this project does
 on the user's behalf; the user registers once, in their own browser, with
 their own information, and gets back a URL to the real file listing.
 
-Once that URL is in hand, this module is fully generic: it discovers every
-``*.pcap`` link on the page (assuming a standard directory-index page — the
-common case for this kind of academic mirror) and downloads them with
-resume/retry, exactly like :mod:`adl_etc.data.ustc_download`.
+Once that URL is in hand: the real post-registration listing (checked
+2026-09-20 against the actual page, not assumed) serves **zip archives**,
+not individual ``*.pcap`` files directly — this module's first version
+assumed a flat directory-index page of pcaps, matching USTC's mirror, and
+was wrong. The real ``/PCAPs`` folder lists ``VPN-PCAPs-01/02.zip`` and
+``NonVPN-PCAPs-01/02/03.zip``; each zip holds its member pcaps flat, no
+subfolders (confirmed against a real 640 MB archive, ``VPN-PCAPS-01.zip``,
+14 members). This module discovers every ``*.zip`` link on the page,
+downloads each with resume/retry (exactly like
+:mod:`adl_etc.data.ustc_download`), and extracts it with
+:func:`adl_etc.data.download.extract_zip` before labelling the extracted
+pcaps by file name, the same as before.
 """
 
 from __future__ import annotations
@@ -28,7 +36,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 from adl_etc.data import manifest as M
-from adl_etc.data.download import discover_links, download_file, fetch_text
+from adl_etc.data.download import discover_links, download_file, extract_zip, fetch_text
 from adl_etc.data.iscx_labels import infer_label
 from adl_etc.utils.provenance import file_sha256
 
@@ -41,10 +49,13 @@ class RegistrationRequired(RuntimeError):
 
 
 def discover_files(base_url: str) -> list[str]:
-    """GETs ``base_url`` and returns every ``*.pcap`` link found on it,
-    resolved to absolute URLs against ``base_url``."""
+    """GETs ``base_url`` and returns every ``*.zip`` link found on it,
+    resolved to absolute URLs against ``base_url`` -- the real post-
+    registration listing serves zip archives (``VPN-PCAPs-01.zip`` and
+    similar), not individual pcaps directly (checked against a real page,
+    see the module docstring)."""
     html = fetch_text(base_url)
-    return [urljoin(base_url, link) for link in discover_links(html, suffix=".pcap")]
+    return [urljoin(base_url, link) for link in discover_links(html, suffix=".zip")]
 
 
 def run(
@@ -59,7 +70,14 @@ def run(
 ) -> int:
     """Returns the number of pcap files present in ``out_dir/pcap`` on exit
     (0 on a dry run). Raises :class:`RegistrationRequired` if neither
-    ``base_url`` nor ``files_from`` was given."""
+    ``base_url`` nor ``files_from`` was given.
+
+    ``files_glob`` matches against each discovered *archive* name (e.g.
+    ``VPN-*.zip``), not individual pcap names -- a pcap's own class can only
+    be known once its containing zip is downloaded and opened, so per-class
+    subsetting happens later, at export time (``export_pcap.py --files``),
+    same as it already does for D4.
+    """
     if files_from is not None:
         urls = [
             line.strip()
@@ -79,48 +97,72 @@ def run(
     if files_glob:
         urls = [u for u in urls if fnmatch.fnmatch(Path(u).name, files_glob)]
     if not urls:
-        raise RegistrationRequired("no .pcap links found at --base-url (or --files-from was empty)")
+        raise RegistrationRequired(
+            "no .zip (or .pcap) links found at --base-url (or --files-from was empty)"
+        )
 
-    log(f"ISCX VPN-nonVPN 2016: {len(urls)} files")
-    unresolved: list[str] = []
+    log(f"ISCX VPN-nonVPN 2016: {len(urls)} archive(s)/file(s)")
     for u in urls:
         name = Path(u).name
-        label = infer_label(name)
-        log(f"  {name:35s} -> {label.class_name or 'UNRESOLVED'}")
-        if label.class_name is None:
-            unresolved.append(name)
-    if unresolved:
-        shown = ", ".join(unresolved[:10]) + (" ..." if len(unresolved) > 10 else "")
-        log(
-            f"warning: {len(unresolved)} file(s) could not be classified from their "
-            f"name; recorded with an empty class_name in labels.csv: {shown}"
-        )
+        # Individual pcap names (e.g. from a hand-written --files-from list)
+        # can be previewed now; a zip's members are unknown until extracted.
+        if name.lower().endswith(".pcap"):
+            label = infer_label(name)
+            log(f"  {name:35s} -> {label.class_name or 'UNRESOLVED'}")
+        else:
+            log(f"  {name:35s} -> (zip: members classified after extraction)")
 
     if dry_run:
         return 0
 
     pcap_dir = out_dir / "pcap"
     pcap_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir = out_dir / "_archives"
 
     labels: list[dict[str, str]] = []
     manifest_files: list[dict[str, object]] = []
+    unresolved: list[str] = []
     for u in urls:
         name = Path(u).name
-        dest = pcap_dir / name
-        log(f"downloading {name} ...")
-        download_file(u, dest)
-        label = infer_label(name)
-        labels.append(
-            {
-                "file_name": name,
-                "class_name": label.class_name or "",
-                "category": label.category or "",
-                "condition": label.condition,
-                "label_confidence": label.confidence,
-            }
-        )
-        manifest_files.append(
-            {"name": name, "bytes": dest.stat().st_size, "sha256": file_sha256(dest)}
+        if name.lower().endswith(".zip"):
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            archive_dest = archive_dir / name
+            log(f"downloading {name} ...")
+            download_file(u, archive_dest)
+            log(f"extracting {name} ...")
+            # The archive is kept (not deleted after extraction, unlike
+            # USTC's .7z path): unlike GitHub, this URL comes from the
+            # user's own gated, non-repeatable registration session, so
+            # losing the raw zip would mean asking them to fetch it again.
+            pcaps = extract_zip(archive_dest, pcap_dir)
+        else:
+            dest = pcap_dir / name
+            log(f"downloading {name} ...")
+            download_file(u, dest)
+            pcaps = [dest]
+
+        for p in pcaps:
+            label = infer_label(p.name)
+            if label.class_name is None:
+                unresolved.append(p.name)
+            labels.append(
+                {
+                    "file_name": p.name,
+                    "class_name": label.class_name or "",
+                    "category": label.category or "",
+                    "condition": label.condition,
+                    "label_confidence": label.confidence,
+                }
+            )
+            manifest_files.append(
+                {"name": p.name, "bytes": p.stat().st_size, "sha256": file_sha256(p)}
+            )
+
+    if unresolved:
+        shown = ", ".join(unresolved[:10]) + (" ..." if len(unresolved) > 10 else "")
+        log(
+            f"warning: {len(unresolved)} file(s) could not be classified from their "
+            f"name; recorded with an empty class_name in labels.csv: {shown}"
         )
 
     labels_path = out_dir / "labels.csv"

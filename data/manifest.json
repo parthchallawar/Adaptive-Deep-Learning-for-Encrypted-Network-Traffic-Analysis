@@ -12,6 +12,199 @@
     "retrieved": "2026-09-20T09:14:52Z",
     "source_url": "kaggle:pranjalkar99/cesnet-22"
   },
+  "iscx-vpn-2016": {
+    "exporter_git_commit": "6931628975768b80e2625bfc669c6c374df2ba2e",
+    "extracted_to": "data\\raw\\iscx-vpn-2016\\pcap",
+    "files": [
+      {
+        "bytes": 766138,
+        "name": "aim_chat_3a.pcap",
+        "sha256": "e191df75c12e47d885fed09db9203ef7d84981e14936a69b0bbebf43b33eb7f5"
+      },
+      {
+        "bytes": 450816,
+        "name": "aim_chat_3b.pcap",
+        "sha256": "d59a0c4151c32517cf715b5d794c292796b3632fd2e3cbafbefda95c7dfc7293"
+      },
+      {
+        "bytes": 67108,
+        "name": "AIMchat1.pcapng",
+        "sha256": "f4720c75c27c51152ceb1146775f3d174b5121346a38eb9e60dc559af4a4af22"
+      },
+      {
+        "bytes": 66484,
+        "name": "AIMchat2.pcapng",
+        "sha256": "873bf4b89a04aec83e55e9effcc46d1a02c934247b8f0d82d0e27ab6c9f82a15"
+      },
+      {
+        "bytes": 3207205,
+        "name": "email1a.pcap",
+        "sha256": "bd11e7156bf3595cb149157cffe26758b52df5ee728d952f1a807db7c75b0a30"
+      },
+      {
+        "bytes": 3259057,
+        "name": "email1b.pcap",
+        "sha256": "43c96bd70d2bfe92383f262ba6394d6638a25545c1d1e4fb99f86779bbd735da"
+      },
+      {
+        "bytes": 808096,
+        "name": "email2a.pcap",
+        "sha256": "8f2c56f824433a762ad8e165a165b6ffb40f9c86c93cea741685ac1a4a6aed3c"
+      },
+      {
+        "bytes": 967539,
+        "name": "email2b.pcap",
+        "sha256": "ac35fc62a417a0d40159e61aac9d260d89dc78165ca51fd47cf09da839399471"
+      },
+      {
+        "bytes": 8550782,
+        "name": "facebook_audio1a.pcap",
+        "sha256": "00e045c94007b7dcc315c135cbe3218e99bf3555b918c420f3970a1e5b04e4e7"
+      },
+      {
+        "bytes": 9523424,
+        "name": "facebook_audio1b.pcapng",
+        "sha256": "06c71c0505f7c656a8334d329ae98de5ebb3c6b471772647d9617d3f0686893b"
+      },
+      {
+        "bytes": 16469907,
+        "name": "facebook_audio2a.pcap",
+        "sha256": "80b34bc5a1844a5d59e490e509fbaf26ac57eb42de5a08046ff0efebf3de73ad"
+      },
+      {
+        "bytes": 17811020,
+        "name": "facebook_audio2b.pcapng",
+        "sha256": "d56a043ff5e7346e804ebe105cdb795f51efdf7ccd6364449c33f223a3929e24"
+      },
+      {
+        "bytes": 105311908,
+        "name": "facebook_audio3.pcapng",
+        "sha256": "f0e43a55bdc7b41b0d3aa8bbc5451c457bf5f9147a0ca72cfabb53d76fe8e93c"
+      },
+      {
+        "bytes": 150194420,
+        "name": "facebook_audio4.pcapng",
+        "sha256": "43fd7b800c04a4d5572e1053c85ab146896a9298ae54ca0a38bf2bfa4525c06b"
+      },
+      {
+        "bytes": 877992,
+        "name": "facebook_chat_4a.pcap",
+        "sha256": "87f5db2e1ab2df7aae06f435cce3683053b25a11d40a8aecd8237dcf92a5e7b5"
+      },
+      {
+        "bytes": 1696402,
+        "name": "facebook_chat_4b.pcap",
+        "sha256": "7a08ff249133e3e8dea384b1a099dcfb49a6f7301ee6955b7656135116e47909"
+      },
+      {
+        "bytes": 146929062,
+        "name": "facebook_video1a.pcap",
+        "sha256": "db361498c1ba27c4f9ae4abfadaaba9d8cfb3a88277c19b466503f2fc3620304"
+      },
+      {
+        "bytes": 89382896,
+        "name": "facebook_video1b.pcapng",
+        "sha256": "b55350777952f5d246a8bca9f8b45ae5f898deda6506c0a636bb4cb460bb6fb8"
+      },
+      {
+        "bytes": 230631530,
+        "name": "facebook_video2a.pcap",
+        "sha256": "7f70a28520ab0018bce0cfc4b36eadd28b3000d9085d00136e834b67bd0fedf0"
+      },
+      {
+        "bytes": 234687720,
+        "name": "facebook_video2b.pcapng",
+        "sha256": "07951dbaff2822332eb08ecf625144565dffb2fcbedac5fa378431847db863cf"
+      },
+      {
+        "bytes": 453200,
+        "name": "facebookchat1.pcapng",
+        "sha256": "82252d030cba2dac7f9cd9a22625b168ad88a2f1bc8294eec1941be688787274"
+      },
+      {
+        "bytes": 172956,
+        "name": "facebookchat2.pcapng",
+        "sha256": "a868aa6031f6821fdb558466b99d5a76015e74f345fd69f4678365c6bf642cc6"
+      },
+      {
+        "bytes": 661548,
+        "name": "facebookchat3.pcapng",
+        "sha256": "f0b22a3546fd0a7ec9dcffe481aeeea51ec20084b9ee7541b1d07c52b1b66421"
+      },
+      {
+        "bytes": 178417,
+        "name": "vpn_aim_chat1a.pcap",
+        "sha256": "3a685ee836ab57f6c44dbdb28e45c857b9ad7036773d80825bb3e45c74922294"
+      },
+      {
+        "bytes": 190525,
+        "name": "vpn_aim_chat1b.pcap",
+        "sha256": "e5f60bbdc06813675ba3e1c1dd6c4ea93971d4c8f6d67a9226ed85bab68c30cf"
+      },
+      {
+        "bytes": 376187475,
+        "name": "vpn_bittorrent.pcap",
+        "sha256": "4858b3f0020756c7abd5cd6ce2bfee91d31eec2e0e957966dca53c6cf1eccbba"
+      },
+      {
+        "bytes": 559048,
+        "name": "vpn_email2a.pcap",
+        "sha256": "1a156940f0f434318479704f90b141a0246c92036219714993019cde28149d85"
+      },
+      {
+        "bytes": 7626146,
+        "name": "vpn_email2b.pcap",
+        "sha256": "762f7b48825e6e7071c5fad90a8c26ebbb61cb25d5e71eeb9347c22a0e9c7c6f"
+      },
+      {
+        "bytes": 6501918,
+        "name": "vpn_facebook_audio2.pcap",
+        "sha256": "ef40538afe08aa6d6d5bf573966af6d5c0304ddf276d1ef634c399186c823d98"
+      },
+      {
+        "bytes": 3396317,
+        "name": "vpn_facebook_chat1a.pcap",
+        "sha256": "5b4fc79048c150e045d45097f34616c91612d6bf1ec5a8a9d959486effa026ab"
+      },
+      {
+        "bytes": 2594284,
+        "name": "vpn_facebook_chat1b.pcap",
+        "sha256": "f6ae91cc3b684af4841ad1593a1b08e57869a48843595b6c98149597613918d6"
+      },
+      {
+        "bytes": 94380369,
+        "name": "vpn_ftps_A.pcap",
+        "sha256": "69f048a986f0de460c893e016d10e84aa5a63649b5066b654bca70b901eec983"
+      },
+      {
+        "bytes": 82635430,
+        "name": "vpn_ftps_B.pcap",
+        "sha256": "4ced53ca8895deb0801cc450aad0b6c32534ad5c864fc71ae39233e78a073331"
+      },
+      {
+        "bytes": 71870096,
+        "name": "vpn_hangouts_audio1.pcap",
+        "sha256": "523ceb26721c02a597f00743125e61257c987b2a4303afebdfce5f6871ebfa58"
+      },
+      {
+        "bytes": 97785336,
+        "name": "vpn_hangouts_audio2.pcap",
+        "sha256": "28632760a7657a770e61d413c5bfeefa66f7eb686b28a300508068e7fd1340ca"
+      },
+      {
+        "bytes": 13708539,
+        "name": "vpn_hangouts_chat1a.pcap",
+        "sha256": "bc675d9f43ad26aba8b61b9e179261882862fb373a007c75812e645feaf4fc76"
+      },
+      {
+        "bytes": 6194348,
+        "name": "vpn_hangouts_chat1b.pcap",
+        "sha256": "e0429c54dd5b05e9156f932c38d192be8addc773acf7fb3cdef8e283f35e3fb7"
+      }
+    ],
+    "retrieved": "2026-09-21T06:10:55Z",
+    "source_url": "https://cicresearch.ca/.../PCAPs/ (user-registered session, VPN-01 + NonVPN-01)"
+  },
   "ustc-tfc2016": {
     "exporter_git_commit": "b9e18df929e3858f784f56542874f5c2016bf475",
     "extracted_to": "data\\raw\\ustc-tfc2016\\pcap",

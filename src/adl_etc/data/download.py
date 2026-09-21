@@ -2,9 +2,9 @@
 
 Shared by every dataset downloader (``scripts/download_iscx.py``,
 ``scripts/download_ustc.py``): resumable HTTP with retry-with-backoff, GitHub
-directory listing via the contents API, and single-archive 7z extraction.
-Dataset-specific knowledge (which files, what class each one is) lives in the
-scripts that call these functions, not here.
+directory listing via the contents API, and single-archive 7z/zip
+extraction. Dataset-specific knowledge (which files, what class each one
+is) lives in the scripts that call these functions, not here.
 
 Only the standard library's ``urllib`` is used for HTTP: the resume/retry
 logic this project needs is a few dozen lines, not a reason to add
@@ -20,6 +20,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -186,6 +187,51 @@ def extract_7z(
             for name in names:
                 extracted = Path(tmp) / name
                 target = dest_dir / extracted.name
+                if target.exists():
+                    raise DownloadError(
+                        f"{archive_path}: extracted name {target.name!r} collides with "
+                        f"an existing file in {dest_dir}"
+                    )
+                shutil.move(str(extracted), target)
+                out.append(target)
+    return sorted(out)
+
+
+def extract_zip(
+    archive_path: str | Path,
+    dest_dir: str | Path,
+    *,
+    suffix: str | tuple[str, ...] = (".pcap", ".pcapng"),
+) -> list[Path]:
+    """Extracts every member of a zip archive ending in ``suffix`` (one
+    string, or a tuple to match several) into ``dest_dir`` (flattened, same
+    contract as :func:`extract_7z`). Uses the standard library's
+    ``zipfile`` -- no extra dependency, unlike ``.7z``.
+
+    Confirmed against two real ISCX VPN-nonVPN 2016 archives, not assumed
+    uniform with USTC's `.7z` shape or with each other:
+    ``VPN-PCAPS-01.zip`` (640 MB, 14 flat top-level ``.pcap`` members, no
+    subfolders) and ``NonVPN-PCAPs-01.zip`` (800 MB, 23 members, 11 of them
+    ``.pcapng`` -- the newer capture format, which ``pcap_source.py``
+    already parses via `dpkt.pcapng.Reader`, spec 002 -- mixed in with
+    plain ``.pcap``). The default matches both suffixes for exactly this
+    reason: an ISCX-specific single-suffix default would have silently
+    dropped almost half of this real archive's files."""
+    suffixes = (suffix,) if isinstance(suffix, str) else suffix
+    archive_path = Path(archive_path)
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(archive_path) as z:
+        lower_suffixes = tuple(s.lower() for s in suffixes)
+        names = [n for n in z.namelist() if n.lower().endswith(lower_suffixes)]
+        if not names:
+            raise DownloadError(f"{archive_path}: no {suffixes} member found")
+        with tempfile.TemporaryDirectory() as tmp:
+            out: list[Path] = []
+            for name in names:
+                extracted = Path(z.extract(name, path=tmp))
+                target = dest_dir / Path(name).name
                 if target.exists():
                     raise DownloadError(
                         f"{archive_path}: extracted name {target.name!r} collides with "

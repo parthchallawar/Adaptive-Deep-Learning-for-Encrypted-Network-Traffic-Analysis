@@ -27,6 +27,11 @@ from adl_etc.utils.provenance import stable_hash
 
 LABELS_FILENAME = "labels.csv"
 PCAP_SUBDIR = "pcap"
+PCAP_SUFFIXES = (".pcap", ".pcapng")
+"""Real finding (plan T3.1): a third of ISCX VPN-nonVPN 2016's real
+NonVPN-PCAPs-01.zip is `.pcapng`, the newer capture format `pcap_source.py`
+already parses (spec 002) -- a `*.pcap`-only glob here silently exported
+zero of those files with no error, just a lower flow count."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +158,11 @@ def export_dataset(
     pcap_dir = dataset_dir / PCAP_SUBDIR
     labels = _read_labels(dataset_dir / LABELS_FILENAME)
 
-    all_pcaps = sorted(pcap_dir.glob("*.pcap"))
+    all_pcaps = (
+        sorted(p for p in pcap_dir.iterdir() if p.is_file() and p.suffix.lower() in PCAP_SUFFIXES)
+        if pcap_dir.is_dir()
+        else []
+    )
     labelled = [p for p in all_pcaps if p.name in labels]
     n_skipped_unlabeled = len(all_pcaps) - len(labelled)
     files = labelled

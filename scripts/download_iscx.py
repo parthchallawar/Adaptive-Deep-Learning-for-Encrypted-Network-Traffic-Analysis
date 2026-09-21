@@ -26,11 +26,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--base-url", default=None, help="the post-registration file-listing URL")
     parser.add_argument(
-        "--files-from", type=Path, default=None, help="local file of pcap URLs, one per line"
+        "--files-from",
+        type=Path,
+        default=None,
+        help="local file of archive (.zip) or pcap URLs, one per line",
     )
     parser.add_argument("--out", type=Path, default=Path("data/raw/iscx-vpn-2016"))
     parser.add_argument("--manifest", type=Path, default=M.DEFAULT_MANIFEST_PATH)
-    parser.add_argument("--files", default=None, help="glob to limit which files are fetched")
+    parser.add_argument(
+        "--files",
+        default=None,
+        help="glob to limit which archives (not individual pcaps) are fetched",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 

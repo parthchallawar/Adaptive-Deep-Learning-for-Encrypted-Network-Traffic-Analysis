@@ -1,7 +1,7 @@
 # Plan: Phase 1, the data pipeline
 
 - **Specs:** [001](../specs/001-datasets-and-acquisition.md), [002](../specs/002-pcap-flow-pipeline.md), [003](../specs/003-feature-representation-and-preprocessing.md), [004](../specs/004-splits-and-evaluation-protocol.md) (build steps 1 to 4)
-- **Status:** done (14 of 14 items) — but see [Exit criteria](#exit-criteria): two are genuinely blocked outside this repo (a Kaggle-kernel run for D1's full corpus, and the user's own ISCX registration for D3), not merely unfinished
+- **Status:** done (14 of 14 items) — see [Exit criteria](#exit-criteria): one remains genuinely blocked outside this repo (a Kaggle-kernel run for D1's full corpus); D3's registration gate was cleared 2026-09-21 and real D3 data now exists, partially
 - **Exit gate:** phase 2 (specs 014, 015, 005) cannot start until [Exit criteria](#exit-criteria) are all green.
 
 ## Approach
@@ -450,23 +450,32 @@ those criteria green without the data behind them would be exactly the
 kind of unmeasured claim this plan's own first rule (correctness decided
 by hand-written expectations, not eyeballing) exists to prevent.
 
-1. **Met.** `pytest` green on the full phase-1 suite (304/304); `ruff` and `mypy` clean.
-2. **Blocked, not met.** D1 shard sets exist for `WEEK-2022-00` only (one real day, plan T5). Weeks 11 to 52 need the full raw-CSV corpus exported, which this plan's own scope decision puts in a Kaggle CPU kernel (D1 acquisition: Path B, spec 001), not this laptop — at the measured 7,339 rows/s that's a multi-hour job. `--verify` passes on the one day that has been exported.
-3. **Half met.** D4 shard sets exist for real (`data/processed/ustc-tfc2016/all`, 403,394 flows, per-file `session_id` 0-23, audit parquet written). D3 shard sets do not exist — blocked on the user's one-time ISCX registration (spec 001); the exporter and split-loading code are complete and tested against fixtures, same pattern as D3's downloader.
-4. **Met for what's downloaded.** `data/manifest.json` validates (`M.verify(...)` is `True`) for `ustc-tfc2016` and for the one real `cesnet-tls-year22-probe` file. There is nothing to validate yet for D2 (not acquired) or D3 (not downloaded).
-5. **Blocked, not met.** No `Standardizer` has been fit for real — `Standardizer.fit` (spec 003, plan T2) needs a real D1 train-period `ShardSet`, and the only real D1 data on disk is one day, not the train weeks (11-26) spec 004 defines. `protocol.load_split`'s standardizer-hash assertion is tested (real round trip, `tests/evaluation/test_protocol.py`) but has not been exercised against a real fitted D1 Standardizer.
-6. **Met.** Cards exist for D1 to D5 (plan T7); each names its real manifest entry where one exists, and says plainly where one doesn't.
-7. **Met for what's measured**, recorded through this progress log rather than gathered specially for this line: D4's real export (403,394 flows, 187 MB, 4.8 min, 18,875 pkt/s — T4); D1's real single-day export (487,081 flows, 7,339 rows/s after the per-file partitioning fix — T5); `tokenize()` on 1M synthetic flows, 3.1 s (T2). Flows-per-week for D1 and shard sizes for the full corpus are not measured, since that corpus doesn't exist yet (criterion 2).
+**Updated 2026-09-21** (see the progress log entry below): the user
+completed ISCX registration and supplied 2 of 5 real archives. Criterion 3
+moves from "blocked" to "partially met, real data"; item 7 gains a real
+D3 throughput number that reverses the D4-proxy estimate spec 001 recorded
+on 2026-09-20.
 
-**Net: 3 of 7 fully met, 2 partially met, 2 blocked outside this repo.**
-Everything blockable *inside* this repo is done. The two remaining blockers
-are unchanged from what T3-T5 already flagged: run the D1 weeks-11-52
-export on Kaggle, and have the user complete the ISCX registration. Phase
-2's own early work (specs 014/015: experiment tracking, Kaggle pipeline)
-does not itself need D1's full corpus or D3 to start — it needs a
-`ShardSet` it can mmap, which D4 already provides for real. Treat phase 2
-as unblocked to *start* on that basis, but not as fully exited from phase 1
-until criteria 2, 3 and 5 are re-checked for real.
+1. **Met.** `pytest` green on the full phase-1 suite (304/304 at close-out, 310/310 after the 2026-09-21 D3 work below); `ruff` and `mypy` clean.
+2. **Blocked, not met.** D1 shard sets exist for `WEEK-2022-00` only (one real day, plan T5). Weeks 11 to 52 need the full raw-CSV corpus exported, which this plan's own scope decision puts in a Kaggle CPU kernel (D1 acquisition: Path B, spec 001), not this laptop — at the measured 7,339 rows/s that's a multi-hour job. `--verify` passes on the one day that has been exported.
+3. **Partially met, real data (updated 2026-09-21).** D4 shard sets exist for real (`data/processed/ustc-tfc2016/all`, 403,394 flows, per-file `session_id` 0-23, audit parquet written). D3 shard sets now also exist for real (`data/processed/iscx-vpn-2016/all`, 130,303 flows across 37 files/session_ids, 8 of 14 classes) — 2 of the 5 real archives have been downloaded and exported; the remaining 3 have not, so D3's real coverage is partial, not complete.
+4. **Met for what's downloaded.** `data/manifest.json` validates (`M.verify(...)` is `True`) for `ustc-tfc2016`, the one real `cesnet-tls-year22-probe` file, and now `iscx-vpn-2016` (37 files). There is nothing to validate yet for D2 (not acquired).
+5. **Blocked, not met.** No `Standardizer` has been fit for real — `Standardizer.fit` (spec 003, plan T2) needs a real D1 train-period `ShardSet`, and the only real D1 data on disk is one day, not the train weeks (11-26) spec 004 defines. `protocol.load_split`'s standardizer-hash assertion is tested (real round trip, `tests/evaluation/test_protocol.py`) but has not been exercised against a real fitted D1 Standardizer.
+6. **Met.** Cards exist for D1 to D5 (plan T7); each names its real manifest entry where one exists, and says plainly where one doesn't. D3's card was rewritten 2026-09-21 with real numbers.
+7. **Met for what's measured**, recorded through this progress log rather than gathered specially for this line: D4's real export (403,394 flows, 187 MB, 4.8 min, 18,875 pkt/s — T4); D1's real single-day export (487,081 flows, 7,339 rows/s after the per-file partitioning fix — T5); `tokenize()` on 1M synthetic flows, 3.1 s (T2); **D3's real export (2026-09-21): 130,303 flows, 1,786.8 MB in 64.6 s, 27.7 MB/s — 16x the 1.7 MB/s D4-proxy estimate spec 001 recorded the day before**, reversing that estimate's "full corpus needs 281 minutes" conclusion (see spec 001's Open questions and the progress log entry below). Flows-per-week for D1 and shard sizes for the full D1/D3 corpora are still not measured, since neither corpus is fully downloaded yet (criterion 2, and D3's remaining 3 archives).
+
+**Net: 3 of 7 fully met, 3 partially met, 1 blocked outside this repo.**
+The blocker that's fully outside this repo's control is now just one: the
+D1 weeks-11-52 Kaggle-kernel run (which criterion 5's Standardizer also
+depends on). D3's remaining blocker is now a bandwidth/time tradeoff for
+the user (download 3 more archives, ~17 more minutes to export once
+downloaded), not a registration gate or a throughput problem — both of
+those were resolved on 2026-09-21. Phase 2's own early work (specs
+014/015: experiment tracking, Kaggle pipeline) does not itself need D1's
+full corpus to start — it needs a `ShardSet` it can mmap, which D4 and now
+D3 both provide for real. Treat phase 2 as unblocked to *start* on that
+basis, but not as fully exited from phase 1 until criteria 2, 3 and 5 are
+re-checked for real.
 
 What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not refit (once one exists), a metric suite that takes `logits[N,K,C]`, and split YAMLs that refuse to leak.
 
@@ -514,3 +523,9 @@ What phase 2 inherits: a `ShardSet` it can mmap, a `Standardizer` it must not re
 - **2026-09-20.** T7 done: five dataset cards (`docs/datasets/{cesnet-tls-year22,cesnet-quic22,iscx-vpn-2016,ustc-tfc2016,self-captured}.md`). License and citation for every dataset were researched, not assumed — D1 (CC BY 4.0, Hynek et al., *Scientific Data* 2024) and D2 (CC BY 4.0, *Data in Brief* 2023) confirmed on their own Zenodo records, not just the paper; D3 confirmed to have **no formal open license**, only a mandatory-citation "publicly available for researchers" notice, by fetching `unb.ca/cic/datasets/vpn.html` directly; D4's GitHub mirror repository is tagged `MPL-2.0` via the GitHub API, flagged in the card as covering the mirror maintainer's own repo, not a relicensing of the underlying CTU/paper data — cite the paper (Wang et al., ICOIN 2017), not the repo tag. D4's card carries the full real 20-class support table (`data/processed/ustc-tfc2016/all`); D1's carries what the one real exported day shows (179/180 apps, 23/24 categories); D2's and D3's cards say plainly that nothing in them has been checked against real bytes yet, rather than presenting spec 001's target numbers as if they were measurements.
 
   T8 done: spec 001-004 status lines rewritten to name exactly what's implemented, what's real, and what's deferred and why — two were stale in a way worth noting (spec 003 still said "shard writer and tokeniser pending" though both landed in plan T2, and spec 004 was still "draft" though T6 landed its first pass), not just spec 001/002 which already tracked recent work. `specs/README.md`'s build-order `State` column updated to match, steps 1-4. The six spec corrections (table above) were already landed incrementally as each task shipped — none were outstanding at this step, confirmed by re-reading the table rather than assumed. [Exit criteria](#exit-criteria) reassessed per-item rather than declared green as a block: 3 of 7 fully met, 2 partially met (D4 real / D3 blocked; manifest valid for what's downloaded), 2 genuinely blocked outside this repo (D1's weeks-11-52 corpus needs a Kaggle kernel; the D1 `Standardizer` needs that corpus to fit on). Phase 1's tasks (T1-T8) are complete; phase 1's *data* is not, by design, since two steps were never this repo's to finish alone.
+- **2026-09-21.** D3 unblocked for real, one day after phase 1's close-out — the user completed ISCX registration and supplied 2 of 5 real archives (`VPN-PCAPS-01.zip`, `NonVPN-PCAPs-01.zip`). Two real gaps found and fixed immediately by running the existing "code complete, data blocked" pipeline against real bytes for the first time:
+  - **The real post-registration listing serves zip archives, not individual pcaps.** `iscx_download.py`'s `discover_files` was written assuming a flat pcap listing like USTC's (the only real precedent available at the time, spec 001's original docstring said so explicitly). The real `/PCAPs` page lists `VPN-PCAPs-01/02.zip` and `NonVPN-PCAPs-01/02/03.zip`. Fixed by adding `adl_etc.data.download.extract_zip` (stdlib `zipfile`, no new dependency, mirroring `extract_7z`'s flatten-and-collision-check design) and pointing `discover_files` at `*.zip` links instead.
+  - **A third of the real NonVPN archive is `.pcapng`, not `.pcap`** (11 of 23 files) — the newer capture format `pcap_source.py` already parses via `dpkt.pcapng.Reader` (spec 002), confirmed unrelated to this bug. Two independent places needed fixing, not one: `extract_zip`'s default suffix now matches `(".pcap", ".pcapng")` instead of just `.pcap`, and a **separate** bug was found in `export_pcap.py`'s own file-discovery (`pcap_dir.glob("*.pcap")`, unrelated code, same silent-drop shape) — fixed to check both suffixes via `PCAP_SUFFIXES`. Neither bug raised an error; both would have silently exported zero of the affected files with a lower flow count and no indication why. Caught by testing the label heuristic and then the full export against real files, not by inspection.
+  - The label-inference heuristic (`iscx_labels.py`, written months earlier against *reconstructed* file names, never a real listing) was checked against real file names for the first time: **all 37 real files across both archives classified correctly, zero unresolved.**
+  - Ran the full real export of everything downloaded so far: 37 files, 130,303 flows (1,590 dropped for zero PPI), 1,786.8 MB in 64.6 s — **27.7 MB/s, 16x the 1.7 MB/s throughput spec 001 recorded the day before** (2026-09-20's ISCX subset-size resolution), because that earlier number was extrapolated from D4's `Neris.pcap` (a botnet capture, not representative of ISCX's chat/voip/p2p/video traffic) since no real ISCX file existed yet to measure directly. Extrapolated to the full 28 GB corpus: **~17 minutes, not ~281** — comfortably under the 60-minute gate. The "D3 will be a per-class subset, never the full corpus" decision this plan and spec 001 both recorded is **reversed**; whether to fetch the remaining 3 archives is now a bandwidth/time tradeoff for the user, not a throughput blocker.
+  - 6 new tests (`extract_zip`'s pcapng-matching and existing coverage, `iscx_download.py`'s zip-discovery rewrite, `export_pcap.py`'s pcapng-discovery regression), full suite 310/310, ruff/mypy clean. `docs/datasets/iscx-vpn-2016.md` and spec 001 rewritten with the real numbers and both corrections.

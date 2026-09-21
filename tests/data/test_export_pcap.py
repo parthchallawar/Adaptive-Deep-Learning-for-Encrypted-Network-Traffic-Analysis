@@ -56,6 +56,33 @@ def test_reference_export_matches_golden_ppi(tmp_path):
     assert int(got["label"]) == 0  # only one class -> label_map = {"tls": 0}
 
 
+def test_pcapng_files_are_discovered_alongside_pcap(tmp_path):
+    # Real finding (plan T3.1): a third of ISCX's real NonVPN-PCAPs-01.zip
+    # is .pcapng. The file-discovery glob used to be "*.pcap" only, which
+    # silently exported zero of those files with no error -- just a lower
+    # flow count. write_pcap's bytes parse fine under any name (pcap_source
+    # sniffs the format from magic bytes, not the extension, spec 002); this
+    # exercises the discovery glob specifically, not the parser.
+    raw_root = _write_dataset(
+        tmp_path,
+        "d",
+        {"a.pcap": REFERENCE_PACKETS, "b.pcapng": REFERENCE_PACKETS},
+        [
+            {"file_name": "a.pcap", "class_name": "tls", "category": "browsing"},
+            {"file_name": "b.pcapng", "class_name": "tls", "category": "browsing"},
+        ],
+    )
+
+    summary = export_dataset(
+        dataset="d", raw_root=raw_root, out_root=tmp_path / "processed", log=lambda _: None
+    )
+
+    assert summary.n_files == 2
+    assert summary.n_files_skipped_unlabeled == 0
+    ss = ShardSet.open(tmp_path / "processed" / "d" / "all")
+    assert len(ss) == 2
+
+
 def test_two_files_get_distinct_session_ids_and_no_shared_flows(tmp_path):
     raw_root = _write_dataset(
         tmp_path,

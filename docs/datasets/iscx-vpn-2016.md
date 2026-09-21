@@ -1,48 +1,59 @@
 # ISCX VPN-nonVPN 2016 (D3)
 
 - **Role:** PCAP pipeline validation, standard-benchmark comparability, category-level transfer (spec 001). Results are documented as **secondary** (spec 004) — the labels are a heuristic, not ground truth (see below).
-- **Status: blocked on registration, code complete.** The real bulk download has not run. Nothing in `data/processed/iscx-vpn-2016/` or `data/manifest.json` exists yet. Everything below that is not explicitly marked "real" is a heuristic or a spec-stated target, not a measurement.
-- **Source and retrieval:** `https://www.unb.ca/cic/datasets/vpn.html` links to `cicresearch.ca/CICDataset/ISCX-VPN-NonVPN-2016/`, which serves a **registration form** (`action="insert.php"`, collecting name/email/institution/job title/country), not a file listing — confirmed by fetching the page directly (spec 001's "Correction (2026-09-20)"). This project does not automate that submission: it is the user's own personal information, and submitting it as if from an automated client would misrepresent who is asking. Once the user registers in their own browser and receives a file-listing URL:
+- **Status: partially downloaded, real data exists.** As of 2026-09-21: the user completed registration and downloaded 2 of the 5 real archives (`VPN-PCAPS-01.zip`, `NonVPN-PCAPs-01.zip`); both are extracted and exported for real. **130,303 real flows**, 8 real classes, `data/manifest.json` has a real `iscx-vpn-2016` entry. The remaining 3 archives (`VPN-PCAPs-02.zip`, `NonVPN-PCAPs-02/03.zip`) have not been fetched yet. Everything below marked "real" is measured from this run, not a spec target.
+- **Source and retrieval:** `https://www.unb.ca/cic/datasets/vpn.html` links to `cicresearch.ca/CICDataset/ISCX-VPN-NonVPN-2016/`, which serves a **registration form** (`action="insert.php"`, collecting name/email/institution/job title/country), not a file listing — confirmed by fetching the page directly (spec 001's "Correction (2026-09-20)"). This project does not automate that submission. Once registered, the real `/PCAPs` listing turned out to serve **zip archives**, not individual pcaps directly (spec 001's "Correction (2026-09-21)") — `VPN-PCAPs-01/02.zip`, `NonVPN-PCAPs-01/02/03.zip`:
   ```
-  python scripts/download_iscx.py --base-url <the post-registration URL> --out data/raw/iscx-vpn-2016
+  python scripts/download_iscx.py --base-url <the post-registration /PCAPs URL> --out data/raw/iscx-vpn-2016
   ```
-  (or `--files-from <a local URL list>`). `adl_etc.data.iscx_download.discover_files` finds `*.pcap` links generically from whatever page it's given.
+  (or `--files-from <a local URL list>`). `adl_etc.data.iscx_download.discover_files` finds `*.zip` links generically, downloads and extracts each with `adl_etc.data.download.extract_zip`.
 - **License:** no formal open-source license is stated on the dataset page; it is "publicly available for researchers" with a mandatory citation requirement (confirmed by fetching `unb.ca/cic/datasets/vpn.html` directly).
 - **Citation:** Draper-Gil, G., Lashkari, A. H., Mamun, M. S. I. & Ghorbani, A. A. "Characterization of Encrypted and VPN Traffic Using Time-Related Features." *Proceedings of the 2nd International Conference on Information Systems Security and Privacy (ICISSP 2016)*, pp. 407-414, Rome, Italy.
-- **Size:** ~28 GB pcap (spec 001); a full-corpus export is not planned (see "Decisions" below) — a per-class subset is.
+- **Size:** ~28 GB pcap total (spec 001); the 2 archives downloaded so far are 1,786.8 MB of real pcap/pcapng data (37 files).
 - **Time structure:** none usable (spec 001).
 
-## Class list (heuristic, unverified — the central caveat of this card)
+## Class list and support (real, from the 2 archives downloaded so far)
 
-7 categories x VPN/non-VPN condition = 14 classes (spec 001's D3 row):
-`browsing`, `chat`, `streaming`, `mail`, `voip`, `p2p`, `file_transfer`,
-each in a `_vpn` and a non-VPN variant. Inferred entirely from each pcap's
-**file name** (e.g. `facebook_chat_4a.pcap`, `vpn_youtube_A.pcap`) via
+7 categories x VPN/non-VPN condition = 14 possible classes (spec 001's D3
+row); these 2 archives cover 8 of them (both are VPN-01 and NonVPN-01, so
+`browsing` and `streaming` are entirely absent so far, and no file from the
+`p2p`/`file_transfer` categories exists on the non-VPN side yet):
+
+| Class | Category | Condition |
+|---|---|---|
+| `chat_vpn` | chat | vpn |
+| `chat_nonvpn` | chat | nonvpn |
+| `mail_vpn` | mail | vpn |
+| `mail_nonvpn` | mail | nonvpn |
+| `voip_vpn` | voip | vpn |
+| `voip_nonvpn` | voip | nonvpn |
+| `p2p_vpn` | p2p | vpn |
+| `file_transfer_vpn` | file_transfer | vpn |
+
+**130,303 real flows** across all 37 files (1,590 dropped for zero PPI),
+`session_id` 0-36 (one per file), `source_manifest_hash` recorded.
+
+Labels are inferred entirely from each pcap's **file name** (e.g.
+`facebook_chat_4a.pcap`, `vpn_youtube_A.pcap`) via
 `adl_etc.data.iscx_labels.infer_label` — this dataset ships no per-flow
-label column at all (spec 001: "none usable" time structure applies to
-labels too, not just time).
-
-The category grouping comes from the dataset's own published description
-and from an independent third-party analysis of this dataset's naming
-convention (`Mr-Pepe/iscx-analysis` on GitHub); the multi-category apps
-(Skype, Facebook, Hangouts — each spans Chat *and* VoIP, Skype also File
-Transfer) are this project's own best-effort reconstruction, **not checked
-against a real file listing**, because the real file names are behind the
-registration gate above. Every row `labels.csv` produces carries
-`label_confidence="heuristic"`; a file name the heuristic cannot resolve
+label column at all. **The heuristic was checked against these 37 real
+file names for the first time on 2026-09-21: zero unresolved.** This is
+real evidence the heuristic (written and tested months earlier against
+*reconstructed* file names, never a real listing) holds up, but it is
+evidence from 2 of 5 archives, not all of them — every row in `labels.csv`
+still carries `label_confidence="heuristic"` rather than being upgraded to
+"confirmed" on partial coverage. A file name the heuristic cannot resolve
 gets an empty `class_name` rather than a guess, and the downloader prints
-every such file so a human reviews it once real files are in hand.
-**Re-verify this mapping against real file names before any D3 result is
-reported** — this is the single most important thing to do before trusting
-this card's numbers, and the reason spec 004 already calls D3's results
-secondary.
+every such file so a human reviews it.
 
 ## Known issues
 
-- **Registration-gated access** (above) — blocks the real download entirely until the user acts outside this project.
-- **Heuristic labels, unverified** (above) — the central open risk for this dataset specifically.
+- **3 of 5 archives not yet downloaded** — `browsing` and `streaming` categories, and non-VPN `p2p`/`file_transfer`, have zero real coverage so far.
+- **The real archive shape was different from what the downloader first assumed** (spec 001's "Correction (2026-09-21)"): zip archives, not flat pcap files — the code has since been corrected and tested, but this was a real gap in what shipped, not merely a documentation lag.
+- **A third of the real non-VPN archive is `.pcapng`, not `.pcap`.** Both `extract_zip`'s default suffix match and a separate, independent bug in `export_pcap.py`'s own file-discovery glob (`*.pcap` only, silently skipping `.pcapng` with no error — found and fixed the same day) had to account for this.
+- **Heuristic labels, partially checked.** Real, but only against 2 of 5 archives — the central open risk for this dataset specifically until the rest are downloaded.
 - **No per-flow ground truth of any kind**, label or otherwise (spec 001).
-- **28 GB is too slow to export in full**: measured on real D4 captures (the closest real proxy available, since no ISCX capture exists yet), the pure-Python `dpkt` backend runs ~1.7 MB/s after plan T4's performance fix — extrapolated, the full 28 GB corpus would take ~281 minutes, past the 60-minute gate this plan set for itself. See "Decisions" below.
+- **The 60-minute throughput gate was originally measured on a proxy (D4), and the proxy was wrong for this dataset**: the 2026-09-20 estimate (~1.7 MB/s, ~281 minutes for 28 GB) used D4's `Neris.pcap`, a botnet capture with many short bursty flows, because no real ISCX file existed yet to measure directly. The **real** rate, once real ISCX files existed to measure (37 files, 1,786.8 MB, 64.6 s): **27.7 MB/s — 16x faster**, extrapolating to **~17 minutes** for the full 28 GB corpus. See "Decisions" below — the subset-only decision this card previously recorded is reversed.
 
 ## Privacy notes
 
@@ -56,6 +67,6 @@ the reason this project declines to automate it is a different concern
 
 ## Decisions this project made
 
-- **Registration is never automated** (spec 001, `download_iscx.py`'s docstring) — the user must register in their own browser first.
-- **Full-corpus export is out of scope**; D3 will be exported as a **per-class subset** (`export_pcap.py --files <glob>`) once unblocked, per the measured throughput gate above (plan T4's progress log has the exact numbers).
-- **File-name-based labels are explicitly flagged low-confidence** (`label_confidence="heuristic"`) throughout the pipeline (manifest, `labels.csv`, shard `meta.json`) rather than presented as equivalent to D1/D4's ground truth.
+- **Registration is never automated** (spec 001, `download_iscx.py`'s docstring) — the user registered in their own browser first, then supplied the downloaded archives.
+- **Full-corpus export is no longer assumed out of scope.** The original decision (a per-class subset only, because a D4-proxy extrapolation suggested 281 minutes) is reversed now that a real ISCX measurement exists: 27.7 MB/s real throughput puts the full 28 GB corpus at ~17 minutes, under the 60-minute gate. Whether to actually fetch and export the remaining 3 archives is a bandwidth/time tradeoff for the user, not a code or throughput blocker anymore.
+- **File-name-based labels are explicitly flagged low-confidence** (`label_confidence="heuristic"`) throughout the pipeline (manifest, `labels.csv`, shard `meta.json`) rather than presented as equivalent to D1/D4's ground truth, even though the first real check found zero mismatches.

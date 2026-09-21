@@ -9,6 +9,8 @@ time.
 
 from __future__ import annotations
 
+import zipfile
+
 import py7zr
 import pytest
 
@@ -17,6 +19,7 @@ from adl_etc.data.download import (
     discover_links,
     download_file,
     extract_7z,
+    extract_zip,
     fetch_text,
     list_github_dir,
 )
@@ -185,3 +188,68 @@ def test_extract_7z_collision_raises(tmp_path):
 
     with pytest.raises(DownloadError):
         extract_7z(archive, dest)
+
+
+# --- zip extraction: matches ISCX's real archive shape (flat, no subfolder) --
+
+
+def test_extract_zip_flat_multiple_files(tmp_path):
+    # Matches the real ISCX archive shape (VPN-PCAPS-01.zip, plan T3.1):
+    # several files directly at the top level, no subfolder.
+    archive = tmp_path / "VPN-PCAPs-01.zip"
+    with zipfile.ZipFile(archive, mode="w") as z:
+        z.writestr("vpn_aim_chat1a.pcap", b"one")
+        z.writestr("vpn_bittorrent.pcap", b"two")
+
+    out = extract_zip(archive, tmp_path / "out")
+
+    assert sorted(p.name for p in out) == ["vpn_aim_chat1a.pcap", "vpn_bittorrent.pcap"]
+    assert (tmp_path / "out" / "vpn_aim_chat1a.pcap").read_bytes() == b"one"
+
+
+def test_extract_zip_matches_pcapng_by_default(tmp_path):
+    # Real finding (NonVPN-PCAPs-01.zip): 11 of 23 members are .pcapng, the
+    # newer capture format pcap_source.py already parses (spec 002). The
+    # default suffix must match both, or extraction silently drops them.
+    archive = tmp_path / "NonVPN-PCAPs-01.zip"
+    with zipfile.ZipFile(archive, mode="w") as z:
+        z.writestr("aim_chat_3a.pcap", b"one")
+        z.writestr("AIMchat1.pcapng", b"two")
+        z.writestr("readme.txt", b"not a capture")
+
+    out = extract_zip(archive, tmp_path / "out")
+
+    assert sorted(p.name for p in out) == ["AIMchat1.pcapng", "aim_chat_3a.pcap"]
+
+
+def test_extract_zip_flattens_subfolders(tmp_path):
+    archive = tmp_path / "nested.zip"
+    with zipfile.ZipFile(archive, mode="w") as z:
+        z.writestr("SMB/SMB-1.pcap", b"one")
+        z.writestr("SMB/SMB-2.pcap", b"two")
+
+    out = extract_zip(archive, tmp_path / "out")
+
+    assert sorted(p.name for p in out) == ["SMB-1.pcap", "SMB-2.pcap"]
+
+
+def test_extract_zip_no_matching_member_raises(tmp_path):
+    archive = tmp_path / "empty.zip"
+    with zipfile.ZipFile(archive, mode="w") as z:
+        z.writestr("readme.txt", b"not a pcap")
+
+    with pytest.raises(DownloadError):
+        extract_zip(archive, tmp_path / "out")
+
+
+def test_extract_zip_collision_raises(tmp_path):
+    dest = tmp_path / "out"
+    dest.mkdir()
+    (dest / "a.pcap").write_bytes(b"already here")
+
+    archive = tmp_path / "one.zip"
+    with zipfile.ZipFile(archive, mode="w") as z:
+        z.writestr("a.pcap", b"new content")
+
+    with pytest.raises(DownloadError):
+        extract_zip(archive, dest)
