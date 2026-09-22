@@ -1,7 +1,7 @@
 # CESNET-TLS-Year22 (D1)
 
 - **Role:** primary dataset — supervised training, drift study, open-set (spec 001).
-- **Manifest entry:** `cesnet-tls-year22-probe` (`data/manifest.json`) for the one real day exported so far; the full corpus will register as `cesnet-tls-year22` once exported.
+- **Manifest entry:** `cesnet-tls-year22-probe` (`data/manifest.json`) for the one real day probed locally; the full corpus is exported and lives as the output of the Kaggle kernel `parthchallawar/adl-export-d1` (plan T3, `kernel/export-d1/`), not registered in the local manifest (that tracks raw downloaded files, not exports).
 - **Source and retrieval:** Path B (spec 001) — the third-party Kaggle mirror `pranjalkar99/cesnet-22` of the original CESNET release, pulled per file/day with the Kaggle CLI:
   ```
   kaggle datasets download -d pranjalkar99/cesnet-22 \
@@ -25,16 +25,29 @@ what's been measured for real, from `WEEK-2022-00/2022-01-01`:
 | categories seen | 23 (of 24) |
 | flows | 487,081 (all of them; zero dropped for zero-PPI) |
 
-Per-class/per-category support counts for the full corpus are not available
-yet — they depend on the weeks-11-52 export (T5b's "done when," still
-pending a Kaggle-kernel run, see below) and on `scripts/make_unknown_split.py`
-being run for real once that export exists (plan T6).
+## Weeks 11-52, exported for real (plan T3, 2026-09-22)
+
+`kernel/export-d1/` ran on Kaggle (CPU, no GPU quota; kernel `parthchallawar/adl-export-d1`, log wall time 2h13m for the export loop): 293 day files across 42 weeks, every one checked against its own `stats-*.json` before sampling, all OK.
+
+| | value |
+|---|---|
+| Sample rate | **3%** uniform per row, seeded per file (not the plan's original 10% — see the phase-2 plan's F5 correction: the real corpus is 417.5M flows over these weeks, 3.2x the plan's holiday-based estimate) |
+| Flows exported | **12,521,630** (0 dropped for zero-PPI) |
+| Shard bytes | 5.20 GiB on disk |
+| Classes (apps) seen | **180 of 180** |
+| `configs/splits/d1_main.yaml` flow counts | train 5,989,515 · val 849,159 · test_id 860,823 · test_drift 4,822,133 |
+| Classes below spec 004's 100-test_id-flow floor | **8 of 180**: `adobe-search` (4), `docker-authentication` (7), `redmine` (9), `sumava-camdata` (10), `opera-weather` (13), `ctu-kosapi` (19), `vscode-update` (26), `mcafee-ccs` (70) |
+
+`results/standardizer.json` is fit on weeks 11-26 only (`Standardizer.fit_many`) and wired into `d1_main.yaml`; it is a local artefact (gitignored), pulled from the kernel's output or re-fit, not committed.
+
+Per-day/per-week counts and the rest of the export report are in the kernel's own `export_report.json` output, not duplicated here.
 
 ## Known issues
 
 - **Week-10 exporter artefact** (spec 004): the dataset's own documentation flags weeks 1-9 and 11-52 as separate regimes; this project's splits (`configs/splits/d1_main.yaml`) start at week 11 for exactly this reason, not because of anything found independently here.
 - **`WEEK-2022-NN` is not plain ISO calendar week** at the start of the year — see "Week labeling" below. A naive `isocalendar()`-based exporter would silently disagree with the mirror's own directory layout for a handful of dates every year.
 - **`TIME_FIRST` (UTC) disagrees with the mirror's own (local-time) file grouping** for ~3.7% of any given day's rows, right at the day boundary — see "`TIME_FIRST` is UTC" below. This is a real, measured bug this project hit and fixed (plan T5b), not a hypothetical.
+- **The same UTC/local mismatch reaches across a *split* boundary, not just a day boundary** (found running `load_split` on the real export, plan T3, 2026-09-22): a period's first day can carry a handful of rows whose true `ts` predates the period. Measured: 30 of 197,505 val flows (0.015%), 16 of 860,823 test_id flows, 20 of 4,822,133 test_drift flows — tiny, but `assert_temporal_order`'s strict `<=` check raised on the first one. Fixed in `protocol.trim_period_boundaries`, which every `load_split` call now runs first for a `temporal: true` config; it drops only what's below a 0.1%-of-split cap and raises `LeakageError` for anything larger, so a real ordering bug still fails loudly.
 - **Some days are genuinely empty** (zero flows, zero-byte compressed file) — see "A day can be entirely empty" below.
 - **Third-party mirror** (see "Mirror trust" above): every result that depends on this data needs `--verify` to have passed for the specific days/weeks it uses.
 

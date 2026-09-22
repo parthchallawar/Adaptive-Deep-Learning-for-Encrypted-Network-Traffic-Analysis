@@ -4,13 +4,14 @@
 # independently exported shard set under data/processed/cesnet-tls-year22/.
 # Weeks 1-10 are excluded (the documented week-10 exporter artefact, spec 004).
 #
-# Only WEEK-2022-00 has been exported for real so far (plan T5's schema
-# probe); the rest of this range is not on disk yet -- protocol.load_split
-# will raise FileNotFoundError against it until the weeks 11-52 corpus is
-# exported (a Kaggle-kernel job, per spec 001's Path B decision), exactly
-# like configs/data/pcap.yaml described D3's real layout before D3 was
-# unblocked. The split boundaries themselves are not a placeholder -- they
-# are spec 004's actual numbers.
+# Exported for real 2026-09-22 (plan T3, kernel/export-d1, 3% uniform sample):
+# 12,521,630 flows, 180 classes, verified against every day's stats-*.json.
+# Locally, load_split needs the shards under data/processed/cesnet-tls-year22/
+# (not shipped in this repo -- pull them from the Kaggle kernel's output,
+# parthchallawar/adl-export-d1, or mount that output on a training kernel).
+# The standardizer is fit on weeks 11-26 only; results/standardizer.json is a
+# local artefact (gitignored), not committed -- re-fit with
+# Standardizer.fit_many if it's missing.
 dataset: cesnet-tls-year22
 temporal: true
 
@@ -33,21 +34,21 @@ splits:
       - WEEK-2022-24
       - WEEK-2022-25
       - WEEK-2022-26
-    standardizer: null # results/standardizer.json once fit (spec 003)
+    standardizer: results/standardizer.json
   val:
     periods:
       - WEEK-2022-27
       - WEEK-2022-28
       - WEEK-2022-29
       - WEEK-2022-30
-    standardizer: null
+    standardizer: results/standardizer.json
   test_id:
     periods:
       - WEEK-2022-31
       - WEEK-2022-32
       - WEEK-2022-33
       - WEEK-2022-34
-    standardizer: null
+    standardizer: results/standardizer.json
   test_drift:
     periods:
       - WEEK-2022-35
@@ -68,4 +69,4 @@ splits:
       - WEEK-2022-50
       - WEEK-2022-51
       - WEEK-2022-52
-    standardizer: null
+    standardizer: results/standardizer.json

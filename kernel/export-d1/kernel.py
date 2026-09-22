@@ -8,7 +8,8 @@ are asserted against the actual corpus. Needs no GPU quota.
 
 ``ADL_EXPORT_MODE=probe`` does the same on three days to answer the cheap questions first
 (does the mount look like we expect, is there internet, how fast is it, how big is a
-week); the default, ``full``, is the whole 42-week run. The probe ran on 2026-09-22. Outputs (under /kaggle/working):
+week); the default, ``full``, is the whole 42-week run. The probe ran on 2026-09-22, the
+full run on 2026-09-22 (12,521,630 flows). Outputs (under /kaggle/working):
 
     shards/cesnet-tls-year22/WEEK-2022-NN/   the shard sets
     standardizer.json                        fit on weeks 11-26 only
@@ -20,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import time
@@ -231,8 +233,17 @@ def finish_full(cesnet_csv, tensors, code_root: Path) -> None:
     log(f"standardizer fit on weeks {TRAIN_WEEKS.start}-{TRAIN_WEEKS.stop - 1}: {std.hash[:12]}")
 
     # -- the real split, with all four leakage rules --------------------------------------
+    # A regex, not a literal "standardizer: null" replace: the committed config now
+    # names a real (repo-relative) path once fit for real elsewhere, and a kernel run
+    # must always point every split at *this run's own* freshly-fit file regardless of
+    # whatever the committed value says.
     spec_text = (code_root / "configs" / "splits" / "d1_main.yaml").read_text(encoding="utf-8")
-    resolved = spec_text.replace("standardizer: null", f"standardizer: {std_path}")
+    resolved = re.sub(
+        r"^(\s*standardizer:).*$",
+        lambda m: f"{m.group(1)} {std_path}",
+        spec_text,
+        flags=re.MULTILINE,
+    )
     resolved_path = WORK / "d1_main.resolved.yaml"
     resolved_path.write_text(resolved, encoding="utf-8")
     loaded = load_split(resolved_path, root=OUT)
