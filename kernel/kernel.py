@@ -72,6 +72,37 @@ def probe_environment() -> None:
                 log(f"  {name} {v}")
         except Exception as exc:  # noqa: BLE001 - a probe reports, it does not judge
             log(f"  {name}: MISSING ({exc})")
+    log_input_tree()
+
+
+def log_input_tree(max_depth: int = 4, max_entries: int = 300) -> None:
+    """What's actually mounted under ``INPUT``, up to a bounded depth --
+    ``kernel_sources`` and ``dataset_sources`` are known to lay files out
+    differently (found the hard way, 2026-09-23: a dataset mounts at
+    ``/kaggle/input/datasets/<owner>/<slug>/...``, per spec 015's own note,
+    but a *kernel*'s output via ``kernel_sources`` did not show up there at
+    all in kernel version 2's run). Logged unconditionally so a failed
+    mount-discovery step (``find_shard_root``/``resolve_split_config``) has
+    a real directory listing to debug from, not just a guess."""
+    if not INPUT.exists():
+        log(f"{INPUT} does not exist")
+        return
+    entries: list[str] = []
+    truncated = False
+    for p in sorted(INPUT.rglob("*")):
+        try:
+            depth = len(p.relative_to(INPUT).parts)
+        except ValueError:
+            continue
+        if depth > max_depth:
+            continue
+        entries.append(str(p.relative_to(INPUT)) + ("/" if p.is_dir() else ""))
+        if len(entries) >= max_entries:
+            truncated = True
+            break
+    log(f"under {INPUT}, depth<={max_depth}{' (truncated)' if truncated else ''}:")
+    for e in entries:
+        log(f"  {e}")
 
 
 # --- code and data discovery (mirrors kernel/export-d1/kernel.py) --------------------------
