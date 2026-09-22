@@ -1,0 +1,9 @@
+# B3 GRU on D1 (spec 005, plan T8): the first real GPU training run. Model and
+# recipe come from the baseline's own file; base.yaml supplies the run shape.
+# `seed` is overridden per queue entry (kernel/run_queue.yaml) for the 3-seed
+# protocol (spec 004).
+defaults:
+  - ../models/baselines/gru.yaml
+  - base.yaml
+
+variant: main
