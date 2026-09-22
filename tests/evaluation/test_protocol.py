@@ -205,6 +205,137 @@ def test_temporal_order_passes_when_val_is_strictly_after_train(tmp_path):
     loaded.close()
 
 
+# --- rule 4's boundary-artifact tripwire (trim_period_boundaries) --------------
+
+
+def test_a_tiny_boundary_straggler_is_dropped_not_raised(tmp_path):
+    """One val flow (of 1,000) misfiled at the exact ts of train's own max -- the
+    real, measured shape of the day-boundary artifact -- is trimmed, not a
+    LeakageError."""
+    _write_period(tmp_path, "d", "p1", n=2, ts=[100, 200])
+    ts_val = [200, *range(201, 1200)]  # one straggler, 999 clean flows
+    _write_period(tmp_path, "d", "p2", n=1000, ts=ts_val)
+    spec = {
+        "dataset": "d",
+        "temporal": True,
+        "splits": {"train": {"periods": ["p1"]}, "val": {"periods": ["p2"]}},
+    }
+    _write_yaml(tmp_path / "split.yaml", spec)
+
+    loaded = PR.load_split(tmp_path / "split.yaml", root=tmp_path)
+    try:
+        assert loaded.boundary_trimmed == {"train": 0, "val": 1}
+        val_ss = loaded.shard_sets["val"][0]
+        val_mask = loaded.masks["val"][0]
+        assert val_mask is not None
+        kept_ts = val_ss.column("ts")[val_mask]
+        assert int(kept_ts.min()) == 201  # the straggler (ts=200) is gone
+        assert len(kept_ts) == 999
+    finally:
+        loaded.close()
+
+
+def test_a_large_boundary_violation_still_raises(tmp_path):
+    """The tripwire: a violation far bigger than the known artifact (half a
+    1,000-flow split, not one flow in it) is a real ordering bug, not noise."""
+    _write_period(tmp_path, "d", "p1", n=2, ts=[100, 200])
+    ts_val = [*([150] * 500), *range(201, 701)]  # 500 of 1000 flows violate
+    _write_period(tmp_path, "d", "p2", n=1000, ts=ts_val)
+    spec = {
+        "dataset": "d",
+        "temporal": True,
+        "splits": {"train": {"periods": ["p1"]}, "val": {"periods": ["p2"]}},
+    }
+    _write_yaml(tmp_path / "split.yaml", spec)
+
+    with pytest.raises(PR.LeakageError, match="too many"):
+        PR.load_split(tmp_path / "split.yaml", root=tmp_path)
+
+
+def test_the_boundary_floor_chains_through_three_splits_in_order(tmp_path):
+    """test_id's floor is val's own max ts (after val's stragglers are dropped),
+    not train's -- so a test_id straggler right at val's boundary is caught too,
+    and a val straggler never leaks into what test_id is allowed to be close to.
+    1,000 flows per split so a single straggler stays under the trim cap."""
+    _write_period(tmp_path, "d", "p1", n=1000, ts=list(range(1000)))  # train, max 999
+    ts_val = [999, *range(1000, 1999)]  # one straggler at train's own max
+    _write_period(tmp_path, "d", "p2", n=1000, ts=ts_val)  # val, max 1998
+    ts_test = [ts_val[-1], *range(2000, 2999)]  # one straggler at val's own max
+    _write_period(tmp_path, "d", "p3", n=1000, ts=ts_test)  # test
+    spec = {
+        "dataset": "d",
+        "temporal": True,
+        "splits": {
+            "train": {"periods": ["p1"]},
+            "val": {"periods": ["p2"]},
+            "test": {"periods": ["p3"]},
+        },
+    }
+    _write_yaml(tmp_path / "split.yaml", spec)
+
+    loaded = PR.load_split(tmp_path / "split.yaml", root=tmp_path)
+    try:
+        assert loaded.boundary_trimmed == {"train": 0, "val": 1, "test": 1}
+    finally:
+        loaded.close()
+
+
+def test_boundary_trimming_is_skipped_and_zero_when_not_temporal(tmp_path):
+    _write_period(tmp_path, "d", "p1", n=2, ts=[100, 200])
+    _write_period(tmp_path, "d", "p2", n=2, ts=[150, 300])
+    spec = {
+        "dataset": "d",
+        "temporal": False,
+        "splits": {"train": {"periods": ["p1"]}, "val": {"periods": ["p2"]}},
+    }
+    _write_yaml(tmp_path / "split.yaml", spec)
+
+    loaded = PR.load_split(tmp_path / "split.yaml", root=tmp_path)
+    try:
+        assert loaded.boundary_trimmed == {}
+        assert loaded.masks["val"][0] is None  # untouched: no session_ids, no trim
+    finally:
+        loaded.close()
+
+
+def test_trim_combines_with_an_existing_session_ids_mask(tmp_path):
+    """The trim ANDs onto whatever leakage-rule-1 mask a split already has,
+    rather than replacing it. 1,000 flows per session_id so that one straggler
+    (0.05% of val) stays under the trim cap and val's own clean session (3)
+    proves the mask isn't just "drop val's whole session 2"."""
+    n_each = 1000
+    session_ids = [sid for sid in range(4) for _ in range(n_each)]
+    ts = (
+        list(range(0, 1000))  # session 0 (train): clean
+        + list(range(1000, 2000))  # session 1 (train): clean, train's max = 1999
+        + [1999, *range(2000, 2999)]  # session 2 (val): one straggler at train's max
+        + list(range(3000, 4000))  # session 3 (val): clean
+    )
+    _write_period(tmp_path, "d", "all", n=len(ts), session_ids=session_ids, ts=ts)
+    spec = {
+        "dataset": "d",
+        "temporal": True,
+        "splits": {
+            "train": {"periods": ["all"], "session_ids": [0, 1]},
+            "val": {"periods": ["all"], "session_ids": [2, 3]},
+        },
+    }
+    _write_yaml(tmp_path / "split.yaml", spec)
+
+    loaded = PR.load_split(tmp_path / "split.yaml", root=tmp_path)
+    try:
+        assert loaded.boundary_trimmed == {"train": 0, "val": 1}
+        val_ss = loaded.shard_sets["val"][0]
+        val_mask = loaded.masks["val"][0]
+        assert val_mask is not None
+        kept_sessions = set(val_ss.column("session_id")[val_mask].tolist())
+        assert kept_sessions == {2, 3}  # session 0/1 (train) never counted as val
+        assert int(val_ss.column("ts")[val_mask].min()) == 2000  # the straggler is gone
+        assert int(val_mask.sum()) == 2 * n_each - 1
+    finally:
+        loaded.close()
+
+
 def test_temporal_order_not_checked_when_not_temporal(tmp_path):
     # D3-style grouped split: overlapping ts is fine when temporal is false.
     _write_period(tmp_path, "d", "p1", n=2, ts=[100, 200])
