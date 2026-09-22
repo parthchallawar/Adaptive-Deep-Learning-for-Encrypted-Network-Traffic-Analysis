@@ -1,4 +1,4 @@
-"""Evaluation metrics (spec 004, plan T6). Every case here is hand-computed,
+"""Evaluation metrics (spec 004, plan T6-T7). Every case here is hand-computed,
 not cross-checked against another implementation -- these numbers are the
 ground truth the rest of the project will be judged against.
 """
@@ -10,9 +10,22 @@ import math
 import numpy as np
 import pytest
 
+from adl_etc.data import ppi as P
 from adl_etc.evaluation import metrics as M
+from adl_etc.evaluation.dense_logits import DenseLogits, NotEvaluatedError, from_causal, from_per_k
 
 # --- K-indexing / padding ------------------------------------------------------
+
+
+def _causal(narrow: np.ndarray) -> DenseLogits:
+    """Pads a small ``[N, k, C]`` test array out to `DenseLogits`'s fixed
+    ``K_MAX`` and wraps it as causal. Every test below only ever queries a K
+    within the narrow array's own width, so the zero padding beyond it is
+    never read."""
+    n, k, c = narrow.shape
+    full = np.zeros((n, P.K_MAX, c))
+    full[:, :k, :] = narrow
+    return from_causal(full)
 
 
 def _logits_from_thresholds(labels: np.ndarray, thresholds: np.ndarray, k_max: int) -> np.ndarray:
@@ -40,11 +53,12 @@ def test_acc_at_k_uses_the_flows_own_ppi_len_not_raw_padding():
     logits = np.zeros((2, 3, 2))
     logits[0] = [[10, 0], [0, 10], [0, 10]]  # flow 0: correct from k=2 on
     logits[1] = [[0, 10], [10, 0], [10, 0]]  # flow 1: idx0 correct, idx1/2 wrong-looking
+    dense = _causal(logits)
 
-    assert M.acc_at_k(logits, labels, ppi_len, k=1) == pytest.approx(0.5)
-    assert M.acc_at_k(logits, labels, ppi_len, k=2) == pytest.approx(1.0)
+    assert M.acc_at_k(dense, labels, ppi_len, k=1) == pytest.approx(0.5)
+    assert M.acc_at_k(dense, labels, ppi_len, k=2) == pytest.approx(1.0)
     # If capping were broken, flow 1 would read idx2 (class 0, wrong) here.
-    assert M.acc_at_k(logits, labels, ppi_len, k=3) == pytest.approx(1.0)
+    assert M.acc_at_k(dense, labels, ppi_len, k=3) == pytest.approx(1.0)
 
 
 def test_short_flow_mask_and_accuracy():
@@ -53,12 +67,46 @@ def test_short_flow_mask_and_accuracy():
     logits = np.zeros((2, 3, 2))
     logits[0] = [[10, 0], [0, 10], [0, 10]]
     logits[1] = [[0, 10], [10, 0], [10, 0]]
+    dense = _causal(logits)
 
     np.testing.assert_array_equal(M.short_flow_mask(ppi_len, k=3), [False, True])
     # Flow 1 alone at k=3 (capped to idx0, class 1) matches its label.
-    assert M.short_flow_accuracy(logits, labels, ppi_len, k=3) == pytest.approx(1.0)
+    assert M.short_flow_accuracy(dense, labels, ppi_len, k=3) == pytest.approx(1.0)
     # No flow is shorter than k=1.
-    assert M.short_flow_accuracy(logits, labels, ppi_len, k=1) is None
+    assert M.short_flow_accuracy(dense, labels, ppi_len, k=1) is None
+
+
+# --- reading through DenseLogits (plan T7) ---------------------------------------------
+
+
+def test_acc_at_k_reads_a_per_k_models_own_answer_not_the_effective_slot():
+    """The F4 scenario: K=10 and K=12 are different models, both seeing a
+    7-packet flow whole. acc_at_k must score each against its own logits."""
+    ppi_len = np.array([7])
+    labels = np.array([1])
+    dense = from_per_k({10: np.array([[5.0, 0.0]]), 12: np.array([[0.0, 5.0]])})
+
+    assert M.acc_at_k(dense, labels, ppi_len, k=10) == pytest.approx(0.0)
+    assert M.acc_at_k(dense, labels, ppi_len, k=12) == pytest.approx(1.0)
+
+
+def test_acc_at_k_raises_for_a_k_the_array_never_evaluated():
+    dense = from_per_k({5: np.zeros((1, 2)), 10: np.zeros((1, 2))})
+    with pytest.raises(NotEvaluatedError):
+        M.acc_at_k(dense, np.array([0]), np.array([30]), k=7)
+
+
+def test_auc_k_and_k95_default_to_the_arrays_own_grid():
+    """A per-K array's default K range is its own evaluated_k (13 values),
+    never a positionally-assumed 1..30."""
+    ks = (5, 10, 30)
+    per_k = {k: np.full((1, 2), [0.0, float(k)]) for k in ks}  # always predicts class 1
+    dense = from_per_k(per_k)
+    labels = np.array([1])
+    ppi_len = np.array([30])
+
+    assert M.auc_k(dense, labels, ppi_len) == pytest.approx(1.0)  # 3/3 correct, not 1/30
+    assert M.k95(dense, labels, ppi_len) == 5  # first (smallest) evaluated K, not 1
 
 
 def test_softmax_sums_to_one_and_matches_hand_values():
@@ -108,22 +156,24 @@ def test_k95_monotonicity():
     # and stays correct after. Cumulative correct counts by k: 12, 16, 19, 19, 20.
     thresholds = np.array([1] * 12 + [2] * 4 + [3] * 3 + [5] * 1)
     labels = np.ones(20, dtype=np.int64)
-    logits = _logits_from_thresholds(labels, thresholds, k_max=5)
+    dense = _causal(_logits_from_thresholds(labels, thresholds, k_max=5))
     ppi_len = np.full(20, 5)
+    ks = range(1, 6)  # the array is padded to K_MAX=30 with zeros; restrict to the real range
 
-    accs = [M.acc_at_k(logits, labels, ppi_len, k) for k in range(1, 6)]
+    accs = [M.acc_at_k(dense, labels, ppi_len, k) for k in ks]
     assert accs == pytest.approx([0.6, 0.8, 0.95, 0.95, 1.0])
-    assert M.k95(logits, labels, ppi_len) == 3
+    assert M.k95(dense, labels, ppi_len, ks=ks) == 3
 
 
 def test_auc_k_is_mean_of_acc_at_k():
     thresholds = np.array([1, 1, 3])
     labels = np.array([1, 1, 1])
-    logits = _logits_from_thresholds(labels, thresholds, k_max=3)
+    dense = _causal(_logits_from_thresholds(labels, thresholds, k_max=3))
     ppi_len = np.full(3, 3)
+    ks = (1, 2, 3)
 
-    accs = [M.acc_at_k(logits, labels, ppi_len, k) for k in (1, 2, 3)]
-    assert M.auc_k(logits, labels, ppi_len) == pytest.approx(np.mean(accs))
+    accs = [M.acc_at_k(dense, labels, ppi_len, k) for k in ks]
+    assert M.auc_k(dense, labels, ppi_len, ks=ks) == pytest.approx(np.mean(accs))
 
 
 def test_harmonic_earliness():

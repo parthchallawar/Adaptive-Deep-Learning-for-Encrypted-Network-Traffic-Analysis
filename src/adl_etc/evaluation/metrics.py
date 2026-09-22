@@ -1,23 +1,30 @@
-"""Evaluation metrics (spec 004, plan T6).
+"""Evaluation metrics (spec 004, plan T6-T7).
 
 Every metric here is a pure function of saved arrays -- never a model -- so a
 policy or threshold can be re-scored from `.npy` logits without re-running
-anything (spec 004's "cheap threshold sweeps" requirement). The canonical
-classification input is ``logits[N, K, C]`` (one row of `C`-way logits per
-prefix length `k` in `1..K_MAX`) plus ``labels[N]`` and ``ppi_len[N]``.
+anything (spec 004's "cheap threshold sweeps" requirement). Every K-based
+function takes a :class:`~adl_etc.evaluation.dense_logits.DenseLogits`
+rather than a bare ``[N, K, C]`` array (plan T7): that array cannot tell a
+causal model's dense output from a per-K model's 13-value grid, which is
+exactly how F4's silent-wrong-K bug happened, and ``DenseLogits.at`` is the
+one place that distinction is resolved. ``logits_at_k`` is kept as the old,
+unsafe *reference* implementation (effective-K only, no ``indexing``
+awareness) -- it is what `DenseLogits` exists to stop anything else from
+using, and it stays only because a regression test needs to demonstrate the
+bug it used to cause.
 
-Deliberately pure NumPy/pandas, no scikit-learn: this module is used from
-phase 1 (spec 004's "Depends on: 001, 003", both phase-1 specs), and
-`scikit-learn` is a phase-2 ("train") extra in `pyproject.toml` -- the
+Deliberately pure NumPy/pandas, no scikit-learn/torch/mlflow: this module is
+used from phase 1 (spec 004's "Depends on: 001, 003", both phase-1 specs),
+and `scikit-learn` is a phase-2 ("train") extra in `pyproject.toml` -- the
 project's own dependency split says phase 1 installs without it. AUROC/AUPR
 are the standard rank-based formulas, cross-checked in tests against the
 well-known small hand-computed cases.
 
-Every K-based function shares one rule for what "evaluating at K" means on a
-flow shorter than K (spec 004's edge case): the *effective* K is
-``min(k, ppi_len)``, computed once in :func:`_index_at_k` and used
-everywhere else, so a flow's own K95/short-flow bucketing can never silently
-disagree between two metrics.
+For a flow shorter than K, what "evaluating at K" means is `DenseLogits.at`'s
+own rule (effective K for causal models, nominal K unclamped for per-K
+models) -- computed once there and used everywhere else here, so a flow's
+own K95/short-flow bucketing can never silently disagree between two
+metrics.
 """
 
 from __future__ import annotations
@@ -26,6 +33,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
+
+from adl_etc.evaluation.dense_logits import DenseLogits
 
 ClassesArg = Sequence[int] | np.ndarray | None
 """Accepted by every classification metric's optional ``classes`` argument:
@@ -47,14 +56,18 @@ def _index_at_k(ppi_len: np.ndarray, k: int | np.ndarray, k_max: int) -> np.ndar
 
 def logits_at_k(logits: np.ndarray, ppi_len: np.ndarray, k: int | np.ndarray) -> np.ndarray:
     """``logits[N, K_MAX, C]`` -> ``[N, C]``, one row per flow at its own
-    effective K."""
+    effective K. **Unsafe for a per-K (``nominal``) array** -- it always
+    reads the effective-K position regardless of how the array was produced,
+    which is F4's bug. Nothing in this module still calls it; every other
+    K-based function below takes a `DenseLogits` instead."""
     idx = _index_at_k(ppi_len, k, logits.shape[1])
     return logits[np.arange(logits.shape[0]), idx, :]
 
 
-def predictions_at_k(logits: np.ndarray, ppi_len: np.ndarray, k: int | np.ndarray) -> np.ndarray:
-    """Predicted class per flow (argmax) at its own effective K."""
-    return logits_at_k(logits, ppi_len, k).argmax(axis=-1)
+def predictions_at_k(dense: DenseLogits, ppi_len: np.ndarray, k: int) -> np.ndarray:
+    """Predicted class per flow (argmax) at nominal prefix length ``k``, read
+    through ``dense.at`` -- see the module docstring."""
+    return dense.at(k, ppi_len).argmax(axis=-1)
 
 
 def short_flow_mask(ppi_len: np.ndarray, k: int) -> np.ndarray:
@@ -77,19 +90,19 @@ def accuracy(preds: np.ndarray, labels: np.ndarray) -> float:
     return float(np.mean(np.asarray(preds) == np.asarray(labels)))
 
 
-def acc_at_k(logits: np.ndarray, labels: np.ndarray, ppi_len: np.ndarray, k: int) -> float:
-    return accuracy(predictions_at_k(logits, ppi_len, k), labels)
+def acc_at_k(dense: DenseLogits, labels: np.ndarray, ppi_len: np.ndarray, k: int) -> float:
+    return accuracy(predictions_at_k(dense, ppi_len, k), labels)
 
 
 def short_flow_accuracy(
-    logits: np.ndarray, labels: np.ndarray, ppi_len: np.ndarray, k: int
+    dense: DenseLogits, labels: np.ndarray, ppi_len: np.ndarray, k: int
 ) -> float | None:
     """Accuracy restricted to flows with ``ppi_len < k`` (spec 004's
     short-flow rule). ``None`` when no flow in the batch is that short."""
     mask = short_flow_mask(ppi_len, k)
     if not mask.any():
         return None
-    preds = predictions_at_k(logits, ppi_len, k)
+    preds = predictions_at_k(dense, ppi_len, k)
     return accuracy(preds[mask], labels[mask])
 
 
@@ -169,24 +182,33 @@ def balanced_accuracy(
 
 
 def auc_k(
-    logits: np.ndarray, labels: np.ndarray, ppi_len: np.ndarray, k_max: int | None = None
+    dense: DenseLogits,
+    labels: np.ndarray,
+    ppi_len: np.ndarray,
+    ks: Sequence[int] | None = None,
 ) -> float:
-    """Mean of ``acc@k`` over ``k`` in ``1..k_max`` -- area under the
-    accuracy-vs-K curve, normalised by the K range (spec 004)."""
-    k_max = k_max or logits.shape[1]
-    accs = [acc_at_k(logits, labels, ppi_len, k) for k in range(1, k_max + 1)]
+    """Mean of ``acc@k`` over ``ks`` -- area under the accuracy-vs-K curve,
+    normalised by the number of K's averaged (spec 004). Defaults to every K
+    ``dense`` actually holds (``dense.evaluated_k``): a per-K model's own
+    13-value grid, or a causal model's full ``1..30``, never assumed."""
+    ks = sorted(ks) if ks is not None else sorted(dense.evaluated_k)
+    accs = [acc_at_k(dense, labels, ppi_len, k) for k in ks]
     return float(np.mean(accs))
 
 
 def k95(
-    logits: np.ndarray, labels: np.ndarray, ppi_len: np.ndarray, k_max: int | None = None
+    dense: DenseLogits,
+    labels: np.ndarray,
+    ppi_len: np.ndarray,
+    ks: Sequence[int] | None = None,
 ) -> int:
-    """Smallest K where ``acc@K >= 0.95 * acc@k_max``."""
-    k_max = k_max or logits.shape[1]
-    accs = np.array([acc_at_k(logits, labels, ppi_len, k) for k in range(1, k_max + 1)])
+    """Smallest K (from ``ks``, default ``dense.evaluated_k``) where
+    ``acc@K >= 0.95 * acc@max(ks)``."""
+    ks = sorted(ks) if ks is not None else sorted(dense.evaluated_k)
+    accs = np.array([acc_at_k(dense, labels, ppi_len, k) for k in ks])
     target = 0.95 * accs[-1]
     hits = np.flatnonzero(accs >= target)
-    return int(hits[0] + 1) if len(hits) else k_max
+    return int(ks[hits[0]]) if len(hits) else int(ks[-1])
 
 
 def harmonic_earliness(accuracy_value: float, mean_k_value: float, k_max: int = 30) -> float:
