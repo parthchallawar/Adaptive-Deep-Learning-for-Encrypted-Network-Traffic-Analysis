@@ -77,18 +77,29 @@ def probe_environment() -> None:
 # --- code and data discovery (mirrors kernel/export-d1/kernel.py) --------------------------
 
 
-def add_code_to_path() -> Path:
-    """The code dataset (``scripts/kaggle_sync.sh push-code``), found by
-    looking for ``src/adl_etc/__init__.py`` somewhere under ``INPUT``. Returns
-    the directory that holds ``src/`` (also where ``GIT_COMMIT``/``GIT_DIRTY``
-    live, read by ``adl_etc.utils.runinfo.code_provenance``)."""
+def _find_code_root() -> Path | None:
+    """Looks for the code dataset (``scripts/kaggle_sync.sh push-code``) by
+    ``src/adl_etc/__init__.py`` somewhere under ``INPUT`` and, if found, adds
+    its ``src/`` to ``sys.path``. Returns ``None``, not an error, when nothing
+    is mounted -- the smoke path's own use, see :func:`run_smoke`."""
     for pattern in ("*/src", "*/*/src", "*/*/*/src"):
         for src in sorted(INPUT.glob(pattern)):
             if (src / "adl_etc" / "__init__.py").exists():
                 sys.path.insert(0, str(src))
                 log(f"code: {src}")
                 return src.parent
-    raise SystemExit("the project code dataset is not mounted (no src/adl_etc found)")
+    return None
+
+
+def add_code_to_path() -> Path:
+    """The code dataset, required: the real Kaggle image has no other way to
+    make ``adl_etc`` importable. Returns the directory that holds ``src/``
+    (also where ``GIT_COMMIT``/``GIT_DIRTY`` live, read by
+    ``adl_etc.utils.runinfo.code_provenance``)."""
+    code_root = _find_code_root()
+    if code_root is None:
+        raise SystemExit("the project code dataset is not mounted (no src/adl_etc found)")
+    return code_root
 
 
 def find_shard_root() -> Path:
@@ -132,10 +143,19 @@ def load_queue(path: Path) -> list[dict[str, Any]]:
 
 
 def run_queue(deadline: float) -> None:
+    # add_code_to_path() must run before any `adl_etc` import: on the real
+    # Kaggle image nothing has installed this package, so `sys.path` only
+    # gains it here. A run against a local dev install (this file's own
+    # tests) cannot catch the order being wrong -- `adl_etc` is already
+    # importable there regardless -- so this bug reached a real Kaggle push
+    # (2026-09-23, kernel version 1) before it was caught. Real Kaggle runs
+    # are the check for exactly this class of bug; see kernel/export-d1's
+    # own notes for the same trap.
+    code_root = add_code_to_path()
+
     from adl_etc.training.run import is_finished, run_dir_for, run_training
     from adl_etc.utils.config import load_config
 
-    code_root = add_code_to_path()
     split_path = resolve_split_config(code_root)
     shard_root = find_shard_root()
     log(f"shards: {shard_root}")
@@ -302,6 +322,14 @@ def _smoke_config(root: Path) -> Path:
 
 
 def run_smoke(*, deadline: float | None = None) -> None:
+    # Best-effort, unlike run_queue's add_code_to_path(): smoke mode's whole
+    # point is running with no Kaggle mount at all (a local dev install, or
+    # these tests, already makes `adl_etc` importable), but if it *is*
+    # pushed to Kaggle for real (kernel-metadata.json always mounts the code
+    # dataset, regardless of mode), this still finds it rather than relying
+    # on sys.path already being right.
+    _find_code_root()
+
     from adl_etc.training.run import run_training
     from adl_etc.utils.config import load_config
 

@@ -8,9 +8,10 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
-    "parthchallawar/adl-export-d1",
     "parthchallawar/adl-encrypted-traffic-code"
   ],
   "competition_sources": [],
-  "kernel_sources": []
+  "kernel_sources": [
+    "parthchallawar/adl-export-d1"
+  ]
 }
