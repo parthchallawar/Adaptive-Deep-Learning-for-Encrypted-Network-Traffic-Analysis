@@ -33,6 +33,7 @@ train = [
     "mlflow>=2.16",
     "onnxruntime>=1.19",
     "h5py>=3.11",
+    "matplotlib>=3.9",
 ]
 # Spec 001 Path A: the canonical HDF5 download and the public pretrained baseline.
 datazoo = [
