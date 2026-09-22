@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         flow_index=idx.astype(np.int64),
     )
     ea.save(out_dir)
+    label_space.save(out_dir / "label_space.json")
 
     cape_cfg = None
     cape_section = cfg.get("cape")

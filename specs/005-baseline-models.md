@@ -1,6 +1,6 @@
 # Spec 005: Baseline Models
 
-- **Status:** draft
+- **Status:** partially implemented (plan T6: B1 XGBoost, B2 CNN, B3 GRU/LSTM built and tested on real D3/D4, B4 deferred to phase 3; plan T7, 2026-09-22: P-ECHO and P-CAPE built in `evaluation/policies.py` exactly as the table below describes, including the energy gate and the min-support-20 fallback; P-RL deferred to phase 3)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 7 of 18
