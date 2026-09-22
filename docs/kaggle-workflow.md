@@ -61,9 +61,15 @@ Verify it's working:
 ## Kernel: kernel/ → Kaggle
 
 `kernel/kernel-metadata.json` defines the kernel (id, GPU/internet flags,
-which dataset(s) it mounts); `id` and `dataset_sources` are already set for
-this account. `kernel/kernel.py` is the script Kaggle runs — wire it up to
-`src/training` once a training entry point exists.
+which dataset(s) it mounts): `dataset_sources` are the D1 export kernel's own
+output (`parthchallawar/adl-export-d1`) and the code dataset
+(`parthchallawar/adl-encrypted-traffic-code`, from `push-code` below).
+`kernel/kernel.py` (plan T8) works through `kernel/run_queue.yaml` in order,
+training each entry with `adl_etc.training.run.run_training` under an 11.5h
+wall-clock guard, and resumes across pushes via each run's own `state.json`.
+`ADL_TRAIN_MODE=smoke` (the default is `queue`) runs the same code on
+~5,000 synthetic flows with no Kaggle mount needed, in well under 2 minutes —
+`tests/test_kernel_smoke.py` runs this locally on every `pytest`.
 
 If kernels can't use internet on this account, push the code as a dataset with
 `./scripts/kaggle_sync.sh push-code` and let `kernel.py` add it to `sys.path`

@@ -1,6 +1,6 @@
 # Spec 015: Kaggle GPU Training Pipeline
 
-- **Status:** draft
+- **Status:** partially implemented (plan T8, 2026-09-22: `kernel/kernel.py` and `training/run.py` built and tested locally -- the resumable queue, the atomic `state.json`, the shared wall-clock guard, and `--smoke` all proven against synthetic data; not yet pushed to Kaggle, so the throughput/epoch-time/GPU-hour figures below are still estimates, exactly as the "Training efficiency" section already flags)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 6 of 18 (moved ahead of 005, same reason as 014)
