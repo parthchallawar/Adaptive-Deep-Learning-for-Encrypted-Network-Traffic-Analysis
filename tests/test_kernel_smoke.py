@@ -19,6 +19,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+# Correction 7 (spec 015): the --smoke run is "part of CI" only in the sense
+# that pytest covers it; there is no CI in this repo. These are real (if
+# small) training runs, so they belong under `slow`, not the default suite.
+pytestmark = pytest.mark.slow
+
 from adl_etc.data.features import Standardizer  # noqa: E402
 from adl_etc.data.tensors import ShardSet  # noqa: E402
 from tests.training.util import make_flows  # noqa: E402
