@@ -46,8 +46,6 @@ QUEUE_STOP_MARGIN_SECONDS = 40 * 60  # spec 015: stop starting new work under 40
 # synthetic mirror, the same technique kernel/export-d1/kernel.py uses.
 INPUT = Path(os.environ.get("ADL_KAGGLE_INPUT", "/kaggle/input"))
 WORK = Path(os.environ.get("ADL_KAGGLE_WORKING", "/kaggle/working"))
-_DEFAULT_QUEUE = str(Path(__file__).resolve().parent / "run_queue.yaml")
-QUEUE_PATH = Path(os.environ.get("ADL_QUEUE", _DEFAULT_QUEUE))
 
 REPORT: dict[str, Any] = {"mode": MODE}
 
@@ -166,6 +164,20 @@ def resolve_split_config(code_root: Path) -> Path:
 # --- the real run: work through run_queue.yaml ------------------------------------------------
 
 
+def resolve_queue_path(code_root: Path) -> Path:
+    """``ADL_QUEUE`` if set (tests, or a manual override); otherwise the
+    queue file under the mounted code dataset's own ``kernel/`` directory --
+    not beside this file. ``kaggle kernels push`` only uploads
+    kernel-metadata.json's ``code_file`` itself, not the rest of ``kernel/``
+    (found for real 2026-09-23: a run got all the way to a real GPU session
+    and then failed on exactly this path not existing); ``push-code`` is what
+    actually ships ``run_queue.yaml``, alongside ``src/`` and ``configs/``."""
+    override = os.environ.get("ADL_QUEUE")
+    if override:
+        return Path(override)
+    return code_root / "kernel" / "run_queue.yaml"
+
+
 def load_queue(path: Path) -> list[dict[str, Any]]:
     raw = OmegaConf.to_container(OmegaConf.load(path))
     if not isinstance(raw, list):
@@ -192,8 +204,9 @@ def run_queue(deadline: float) -> None:
     log(f"shards: {shard_root}")
     log(f"resolved split: {split_path}")
 
-    entries = load_queue(QUEUE_PATH)
-    log(f"queue: {len(entries)} entries from {QUEUE_PATH}")
+    queue_path = resolve_queue_path(code_root)
+    entries = load_queue(queue_path)
+    log(f"queue: {len(entries)} entries from {queue_path}")
     results: list[dict[str, Any]] = []
 
     for i, entry in enumerate(entries):

@@ -90,13 +90,22 @@ push_code() {
   # Ship only importable project code and configs — no data, no credentials.
   cp -r src "$CODE_STAGE_DIR/src"
   [ -d configs ] && cp -r configs "$CODE_STAGE_DIR/configs"
+  # `kaggle kernels push` only uploads kernel-metadata.json's own code_file, not
+  # the rest of kernel/ (found for real 2026-09-23: run_queue.yaml never
+  # reached Kaggle, and kernel.py failed reading it from a path that only
+  # exists in this git checkout). The code dataset is the reliable way to ship
+  # it instead; kernel.py looks for it under the mounted code dataset's own
+  # kernel/ directory.
+  mkdir -p "$CODE_STAGE_DIR/kernel"
+  [ -f kernel/run_queue.yaml ] && cp kernel/run_queue.yaml "$CODE_STAGE_DIR/kernel/run_queue.yaml"
   find "$CODE_STAGE_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
   # Provenance sidecars, read by adl_etc.utils.runinfo.code_provenance() since a
-  # kernel has no .git. GIT_DIRTY covers only what is shipped (src/, configs/):
-  # 1 if it differs from the commit, 0 if identical. When git can't say, both
-  # files are left out and the run is treated as dirty rather than as clean.
+  # kernel has no .git. GIT_DIRTY covers only what is shipped (src/, configs/,
+  # kernel/run_queue.yaml): 1 if it differs from the commit, 0 if identical.
+  # When git can't say, both files are left out and the run is treated as
+  # dirty rather than as clean.
   if git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null; then
-    if [ -n "$(git status --porcelain -- src configs)" ]; then
+    if [ -n "$(git status --porcelain -- src configs kernel/run_queue.yaml)" ]; then
       echo 1 > "$CODE_STAGE_DIR/GIT_DIRTY"
     else
       echo 0 > "$CODE_STAGE_DIR/GIT_DIRTY"
