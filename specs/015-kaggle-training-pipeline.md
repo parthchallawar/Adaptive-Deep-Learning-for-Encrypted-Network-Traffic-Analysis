@@ -1,6 +1,6 @@
 # Spec 015: Kaggle GPU Training Pipeline
 
-- **Status:** partially implemented (plan T8, 2026-09-22: `kernel/kernel.py` and `training/run.py` built and tested locally -- the resumable queue, the atomic `state.json`, the shared wall-clock guard, and `--smoke` all proven against synthetic data; not yet pushed to Kaggle, so the throughput/epoch-time/GPU-hour figures below are still estimates, exactly as the "Training efficiency" section already flags)
+- **Status:** implemented and run for real (plan T8). `kernel/kernel.py` and `training/run.py` built and tested locally 2026-09-22 (the resumable queue, the atomic `state.json`, the shared wall-clock guard, and `--smoke`), then pushed to Kaggle 2026-09-23: B3 (GRU), 3 seeds, on the real D1 export -- see "Training efficiency" below for the real measured throughput, epoch time and GPU-hours, replacing the estimates this spec carried until then. Getting there took 8 kernel pushes across two real, previously-untested Kaggle mechanics (a kernel's own import path before its mounted code is on `sys.path`; `kernel_sources` vs `dataset_sources` for mounting another kernel's output, and that `kaggle kernels push` ships only `kernel-metadata.json`'s `code_file`, not the rest of the local `kernel/` directory) -- each recorded in the phase-2 plan's progress log.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 6 of 18 (moved ahead of 005, same reason as 014)
@@ -83,7 +83,8 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 - Batch 4096 (SSL two views: 2 x 4096 sequences of 31 tokens): a few GB of activations; fits with margin.
 - No DataLoader workers; a single producer thread prefetches index batches to GPU.
 - `torch.compile` optional (first-epoch compile cost about 2 min; enabled for runs > 1 h).
-- Expected throughput on T4 (to be measured in the first smoke run and recorded here): about 30k to 40k flows/s forward+backward for PAT → 3M flows/epoch in about 90 s of pure compute; real epochs 3 to 5 min including heads and augmentation. This means a 10-epoch SSL run on D1 XS train is well under 1 h, and the 12 h cap is not the binding constraint; the weekly 30 h is.
+- Expected throughput on T4 for PAT (phase 3's backbone, not yet built): about 30k to 40k flows/s forward+backward → 3M flows/epoch in about 90 s of pure compute; real epochs 3 to 5 min including heads and augmentation. Still an estimate -- unlike B3 below, nothing has measured it yet.
+- **Measured for real (plan T8, 2026-09-23): B3 (GRU) on D1's real train split (5,989,515 flows), one T4, batch 4096, AMP on.** 20 epochs took 46m35s (seed 0), 46m12s (seed 1), 46m15s (seed 2) -- 139 s/epoch average, so **about 43,000 flows/s forward+backward** (close to the PAT estimate above, for a much smaller model, on the same GPU). All 3 seeds together: **2h19m wall time, about 2.3 GPU-hours** of the 30 h/week quota (a single T4 was used per run; the session's second T4 sat idle since spec 015's own non-goal is "the second T4 is used only to run two independent seeds concurrently," not built here). This means the 10-epoch SSL runs phase 3 is sizing for are very likely well under 1 h too, and confirms the 12 h session cap is not the binding constraint for jobs this size -- the weekly 30 h is, and it has ample headroom (this run used under 8% of it).
 
 ### Weekly budget plan (example for phase 3)
 
@@ -127,8 +128,8 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 
 ## Success criteria
 
-- First real Kaggle run (baseline B5) completes end-to-end, results pulled and appear in local MLflow, within phase 2.
-- No week exceeds the quota; every run is resumable.
+- First real Kaggle run (baseline B5) completes end-to-end, results pulled and appear in local MLflow, within phase 2. **Correction 3 (landed with T8):** B5 is spec 006's backbone (phase 3, not yet built); this criterion's real run is B3 instead. **Met 2026-09-23**: 3 seeds, results pulled with `kaggle_sync.sh pull-results` and imported with `scripts/mlflow_import.py` (`results/mlflow.db`, all 3 runs `FINISHED`).
+- No week exceeds the quota; every run is resumable. **Met**: this run used about 2.3 of the 30 weekly GPU-hours. Resumability was exercised for real too, just not needed here -- every run finished within a single push.
 
 ## Open questions
 
