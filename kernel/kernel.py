@@ -140,11 +140,16 @@ def find_shard_root() -> Path:
     raise SystemExit("no cesnet-tls-year22 shard set found under " + str(INPUT))
 
 
-def resolve_split_config(code_root: Path) -> Path:
+def resolve_split_config(code_root: Path) -> tuple[Path, Path]:
     """A copy of ``configs/splits/d1_main.yaml`` whose ``standardizer:``
     fields point at the mounted ``standardizer.json`` -- the committed value
     is a local path (``results/standardizer.json``) that does not exist on
-    Kaggle, and ``assert_standardizer_hash_consistent`` loads it literally."""
+    Kaggle, and ``assert_standardizer_hash_consistent`` loads it literally.
+    Also returns the real ``std_path`` itself: a training config's own
+    top-level ``standardizer:`` key is separate from the split file's (found
+    for real 2026-09-23: the split resolved fine, then
+    ``training.run.load_train_val`` tried the config's *unresolved* default,
+    ``results/standardizer.json``, and failed) and needs the same override."""
     candidates = sorted(INPUT.rglob("standardizer.json"))
     if not candidates:
         raise SystemExit("no standardizer.json found under " + str(INPUT))
@@ -158,7 +163,7 @@ def resolve_split_config(code_root: Path) -> Path:
     )
     resolved_path = WORK / "d1_main.resolved.yaml"
     resolved_path.write_text(resolved, encoding="utf-8")
-    return resolved_path
+    return resolved_path, std_path
 
 
 # --- the real run: work through run_queue.yaml ------------------------------------------------
@@ -199,10 +204,11 @@ def run_queue(deadline: float) -> None:
     from adl_etc.training.run import is_finished, run_dir_for, run_training
     from adl_etc.utils.config import load_config
 
-    split_path = resolve_split_config(code_root)
+    split_path, std_path = resolve_split_config(code_root)
     shard_root = find_shard_root()
     log(f"shards: {shard_root}")
     log(f"resolved split: {split_path}")
+    log(f"standardizer: {std_path}")
 
     queue_path = resolve_queue_path(code_root)
     entries = load_queue(queue_path)
@@ -211,7 +217,12 @@ def run_queue(deadline: float) -> None:
 
     for i, entry in enumerate(entries):
         cfg_path = code_root / str(entry["config"])
-        overrides = [*entry.get("overrides", []), f"split={split_path}", f"data_root={shard_root}"]
+        overrides = [
+            *entry.get("overrides", []),
+            f"split={split_path}",
+            f"data_root={shard_root}",
+            f"standardizer={std_path}",
+        ]
         cfg = load_config(cfg_path, overrides=[str(o) for o in overrides])
         seed = int(cfg.seed)
         run_dir = run_dir_for(cfg, seed)
