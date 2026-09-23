@@ -51,26 +51,28 @@ Encrypted traffic (TLS 1.3, ECH, QUIC) leaves only packet metadata observable. O
 
 ## Module map
 
+**Correction 6 (landed with plan T9, 2026-09-23):** this table predates the src-layout rename and named modules under bare `src/...`; the real package is `adl_etc`, importable from `src/adl_etc/...`. Paths below are corrected throughout. Modules with no build step yet keep their originally planned path as a placeholder.
+
 | Spec | Module | Source location |
 |---|---|---|
-| 001 | Datasets and acquisition | `src/data/datasets/`, `scripts/download_*.py` |
-| 002 | PCAP / live to flows to PPI | `src/data/pcap/`, `src/data/flows.py` |
-| 003 | Feature representation and preprocessing | `src/data/features.py`, `src/data/tensors.py` |
-| 004 | Splits and evaluation protocol | `src/evaluation/protocol.py`, `src/evaluation/metrics.py` |
-| 005 | Baseline models | `src/models/baselines/` |
-| 006 | Prefix-Aware Transformer backbone | `src/models/pat.py` |
-| 007 | Self-supervised pretraining | `src/training/pretrain.py` |
-| 008 | Supervised prefix training and calibration | `src/training/finetune.py`, `src/training/calibrate.py` |
-| 009 | Adaptive stopping policy | `src/inference/policy.py` |
-| 010 | Unknown / anomaly detection | `src/inference/unknown.py` |
-| 011 | Resource budget controller | `src/inference/controller.py` |
-| 012 | Drift monitoring (and optional repair) | `src/inference/drift.py` |
-| 013 | Efficiency and latency benchmarking | `src/evaluation/efficiency.py` |
-| 014 | Experiment tracking and reproducibility | `src/utils/tracking.py`, `configs/` |
+| 001 | Datasets and acquisition | `src/adl_etc/data/`, `scripts/download_*.py` |
+| 002 | PCAP / live to flows to PPI | `src/adl_etc/data/pcap_source.py`, `src/adl_etc/data/flows.py` |
+| 003 | Feature representation and preprocessing | `src/adl_etc/data/features.py`, `src/adl_etc/data/tensors.py` |
+| 004 | Splits and evaluation protocol | `src/adl_etc/evaluation/protocol.py`, `src/adl_etc/evaluation/metrics.py` |
+| 005 | Baseline models | `src/adl_etc/models/baselines/` |
+| 006 | Prefix-Aware Transformer backbone | `src/adl_etc/models/pat.py` (not yet built) |
+| 007 | Self-supervised pretraining | `src/adl_etc/training/pretrain.py` (not yet built) |
+| 008 | Supervised prefix training and calibration | `src/adl_etc/training/run.py` (the general entry point, built in T8), `src/adl_etc/training/calibrate.py` (not yet built) |
+| 009 | Adaptive stopping policy | `src/adl_etc/inference/policy.py` (not yet built; `evaluation/policies.py`'s P-ECHO/P-CAPE are the offline versions, built in T7) |
+| 010 | Unknown / anomaly detection | `src/adl_etc/inference/unknown.py` (not yet built; `evaluation/unknown_split.py` is the offline open-set draw, built in T6) |
+| 011 | Resource budget controller | `src/adl_etc/inference/controller.py` (not yet built) |
+| 012 | Drift monitoring (and optional repair) | `src/adl_etc/inference/drift.py` (not yet built) |
+| 013 | Efficiency and latency benchmarking | `src/adl_etc/evaluation/efficiency.py` (not yet built) |
+| 014 | Experiment tracking and reproducibility | `src/adl_etc/utils/tracking.py`, `configs/` |
 | 015 | Kaggle training pipeline | `kernel/`, `scripts/kaggle_sync.sh` |
-| 016 | Inference service (FastAPI) | `src/service/` |
-| 017 | Dashboard (Streamlit) | `src/dashboard/` |
-| 018 | Storage and database | `src/service/db/` |
+| 016 | Inference service (FastAPI) | `src/adl_etc/service/` (empty placeholder) |
+| 017 | Dashboard (Streamlit) | `src/adl_etc/dashboard/` (empty placeholder) |
+| 018 | Storage and database | `src/adl_etc/service/db/` (not yet built) |
 | 019 | Deployment (Docker) — **deferred**, not in the current plan | `docker/`, `docker-compose.yml` |
 | 020 | Testing and quality | `tests/` |
 

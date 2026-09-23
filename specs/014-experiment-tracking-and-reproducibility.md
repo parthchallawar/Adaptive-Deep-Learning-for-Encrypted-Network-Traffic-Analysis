@@ -25,7 +25,7 @@ The project will produce dozens of runs across two machines (laptop CPU, Kaggle 
 
 ### Configuration
 
-- OmegaConf YAML under `configs/`: `data/`, `splits/`, `models/`, `pretrain/`, `finetune/`, `policy/`, `controller/`, `eval/`. Composition by `defaults:` lists and CLI overrides (`python -m src.training.finetune --config configs/finetune/pat_ssl.yaml seed=1 data.label_fraction=0.1`).
+- OmegaConf YAML under `configs/`: `data/`, `splits/`, `models/`, `train/` (built in T8; `pretrain/`, `finetune/`, `policy/`, `controller/` are phase 3+, not yet built), `eval/`. Composition by `defaults:` lists and CLI overrides (correction 6: the package is `adl_etc`, and the real CLIs built so far, `adl_etc.training.run` and `adl_etc.evaluation.run`, take overrides via an explicit `--override` flag: `python -m adl_etc.training.run --config configs/train/b3_gru_d1.yaml --override seed=1`).
 - The resolved config is saved with every run as `config_resolved.yaml`, together with `git_commit`, `git_dirty`, Python and library versions, and the hardware description.
 
 ### Naming
@@ -50,7 +50,7 @@ The project will produce dozens of runs across two machines (laptop CPU, Kaggle 
 ### Tables and figures
 
 - `scripts/make_tables.py` queries MLflow, aggregates by run name pattern, computes mean ± std over seeds and paired bootstrap CIs (spec 004), writes Markdown and LaTeX tables and PNG/HTML figures to `results/summaries/`.
-- Figures follow a single style file (`src/utils/plotstyle.py`): colour-blind-safe palette, consistent axis labels ("packets read K", "accuracy").
+- Figures follow a single style file (`adl_etc.evaluation.plotstyle`, built in T7 -- correction 6: under `evaluation/`, not `utils/`, so the module boundary test can walk it): colour-blind-safe palette, consistent axis labels ("packets read K", "accuracy").
 
 ## Inputs and outputs
 

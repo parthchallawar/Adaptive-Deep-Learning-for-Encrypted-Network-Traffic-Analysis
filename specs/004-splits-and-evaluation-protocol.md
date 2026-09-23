@@ -54,7 +54,7 @@ Used as anomaly test only: model trained on D1 (or D3 benign) must flag malware 
 
 ## Metrics
 
-All computed by `src/evaluation/metrics.py`, each as a function of K where applicable.
+All computed by `adl_etc.evaluation.metrics` (correction 6: the package is `adl_etc`, not bare `src`), each as a function of K where applicable.
 
 **Classification (known classes):** accuracy, macro-F1, per-class F1, balanced accuracy, confusion matrix (top-30 classes plotted), PR-AUC (macro) and ROC-AUC (macro, one-vs-rest).
 
@@ -113,7 +113,7 @@ Saved logits are a `DenseLogits` (`adl_etc.evaluation.dense_logits`): a dense `[
 
 ## Success criteria
 
-- `python -m src.evaluation.run --config configs/eval/d1_full.yaml --run <id>` produces a complete report for any registered model.
+- `python -m adl_etc.evaluation.run --config configs/eval/d1_full.yaml` produces a complete report for any registered model (correction 6: the package is `adl_etc`; the real CLI, built in T7, takes `--config` and `--override`, not a separate `--run <id>`).
 - Main table and figures regenerate from MLflow without manual editing.
 
 ## Open questions
