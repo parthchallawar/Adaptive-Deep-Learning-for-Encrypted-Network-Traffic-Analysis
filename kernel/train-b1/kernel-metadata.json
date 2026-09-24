@@ -1,5 +1,5 @@
 {
-  "id": "parthchallawar/adl-train-b1",
+  "id": "parthchallawar/adl-train-b1-xgboost",
   "title": "ADL Train B1 (XGBoost)",
   "code_file": "kernel.py",
   "language": "python",
