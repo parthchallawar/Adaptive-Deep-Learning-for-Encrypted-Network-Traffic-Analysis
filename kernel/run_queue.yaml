@@ -6,9 +6,13 @@
 #
 # `split`/`data_root` are appended by kernel.py itself (the paths its mounted
 # datasets resolve to); do not set them here.
-- config: configs/train/b3_gru_d1.yaml
+#
+# B3's 3 seeds already ran and finished for real (2026-09-23); left out here so
+# a fresh push does not retrain them for nothing (each push starts from an
+# empty /kaggle/working, so "already finished" only helps within one session).
+- config: configs/train/b2_cnn_d1.yaml
   overrides: ["seed=0", "device=cuda"]
-- config: configs/train/b3_gru_d1.yaml
+- config: configs/train/b2_cnn_d1.yaml
   overrides: ["seed=1", "device=cuda"]
-- config: configs/train/b3_gru_d1.yaml
+- config: configs/train/b2_cnn_d1.yaml
   overrides: ["seed=2", "device=cuda"]
