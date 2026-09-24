@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -85,6 +86,25 @@ def build_inputs(tmp_path: Path) -> Path:
     (code / "configs" / "train").mkdir(parents=True)
     shutil.copy(REPO / "configs" / "train" / "base.yaml", code / "configs" / "train")
     shutil.copy(REPO / "configs" / "train" / "b1_xgb_d1.yaml", code / "configs" / "train")
+    # base.yaml's committed results_root ("results", relative) resolves against
+    # whatever process runs the kernel script. kernel/train-b1/kernel.py never
+    # overrides it (the real kernel doesn't need to -- Kaggle's own cwd makes
+    # that relative path land under /kaggle/working), but a *test* runs in
+    # this repo's own working directory, so leaving it unpatched here would
+    # write real-looking run directories straight into this project's actual
+    # results/ (found for real 2026-09-24: two runs named exactly what a real
+    # B1 Kaggle run would use, sitting in the committed results/ tree).
+    base_yaml = code / "configs" / "train" / "base.yaml"
+    isolated_results = (tmp_path / "kaggle-results").as_posix()
+    base_yaml.write_text(
+        re.sub(
+            r"^results_root:.*$",
+            f"results_root: {isolated_results}",
+            base_yaml.read_text(encoding="utf-8"),
+            flags=re.MULTILINE,
+        ),
+        encoding="utf-8",
+    )
     (code / "configs" / "models" / "baselines").mkdir(parents=True)
     shutil.copy(
         REPO / "configs" / "models" / "baselines" / "xgb.yaml",
