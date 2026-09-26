@@ -139,6 +139,7 @@ def test_trains_all_three_seeds_and_writes_a_report(tmp_path, monkeypatch):
     build_inputs(tmp_path)
     mod = load_kernel(monkeypatch, tmp_path)
     mod.SEEDS = (0, 1)  # two is enough to prove the loop; keep the test fast
+    mod.DEVICE = "cpu"  # a CI runner has no GPU; the real kernel forces cuda
 
     mod.main()
 
@@ -156,6 +157,7 @@ def test_a_finished_seed_is_skipped_on_a_second_push(tmp_path, monkeypatch):
     build_inputs(tmp_path)
     mod = load_kernel(monkeypatch, tmp_path)
     mod.SEEDS = (0,)
+    mod.DEVICE = "cpu"
     mod.main()
     first_run_dir = Path(
         json.loads((tmp_path / "working" / "train_b1_report.json").read_text())["seeds"][0][
@@ -166,6 +168,7 @@ def test_a_finished_seed_is_skipped_on_a_second_push(tmp_path, monkeypatch):
 
     mod2 = load_kernel(monkeypatch, tmp_path)
     mod2.SEEDS = (0,)
+    mod2.DEVICE = "cpu"
     mod2.main()
     report2 = json.loads((tmp_path / "working" / "train_b1_report.json").read_text())
     assert report2["seeds"][0]["status"] == "already_finished"

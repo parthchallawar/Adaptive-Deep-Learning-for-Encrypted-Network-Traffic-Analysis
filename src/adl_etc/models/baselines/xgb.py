@@ -6,8 +6,10 @@ spec 004's grid, each trained on :func:`~adl_etc.data.prefix_stats.prefix_flowst
 evaluated early would read the future.
 
 A per-K model, so its saved logits are ``nominal``-indexed
-(``evaluation.dense_logits``). CPU, local. Class weights are inverse-frequency,
-capped, on the same rule as the neural baselines' sampler.
+(``evaluation.dense_logits``). CPU by default; ``device="cuda"`` switches
+XGBoost's own histogram builder to GPU (``tree_method="hist"`` supports both,
+xgboost>=2.0's ``device`` parameter picks which). Class weights are
+inverse-frequency, capped, on the same rule as the neural baselines' sampler.
 
 Not every class need appear in training (a rare class can have no flows in the
 train period). XGBoost needs contiguous labels, so the classes present are
@@ -69,6 +71,7 @@ class XGBBaseline:
         n_jobs: int = -1,
         max_train_flows: int | None = None,
         seed: int = 0,
+        device: str = "cpu",
     ) -> None:
         self.label_space = label_space
         self.ks = grid_from(ks)
@@ -83,6 +86,7 @@ class XGBBaseline:
             "n_jobs": n_jobs,
             "max_train_flows": max_train_flows,
             "seed": seed,
+            "device": device,
         }
         self.boosters: dict[int, xgb.Booster] = {}
         self.best_iteration: dict[int, int] = {}
@@ -153,6 +157,7 @@ class XGBBaseline:
                 n_jobs=p["n_jobs"],
                 random_state=p["seed"],
                 verbosity=0,
+                device=p["device"],
             )
             x_tr = prefix_flowstats(train.ppi, train.ppi_len, k)
             x_va = prefix_flowstats(val_kept.ppi, val_kept.ppi_len, k)

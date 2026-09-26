@@ -1,4 +1,4 @@
-"""Kaggle CPU kernel: trains B1 (XGBoost) on the real D1 export, 3 seeds
+"""Kaggle GPU kernel: trains B1 (XGBoost) on the real D1 export, 3 seeds
 (spec 005, plan T8-follow-up).
 
 Mounts the D1 export kernel's output (``kernel_sources``:
@@ -8,14 +8,16 @@ Mounts the D1 export kernel's output (``kernel_sources``:
 both use, because ``assert_standardizer_hash_consistent`` loads that path
 literally, even though B1 itself reads no Standardizer (its features come
 straight from ``prefix_flowstats``) -- then trains seeds 0, 1, 2 in order via
-``adl_etc.training.run_xgb.run_training``.
+``adl_etc.training.run_xgb.run_training``, with ``model.device=cuda`` forced
+below so XGBoost's own histogram builder runs on the GPU instead of Kaggle's
+4-core free CPU (a real run on CPU alone ran past 10 hours without finishing
+even one seed and was cancelled; GPU histogram building is the fix, not a
+smaller grid or fewer trees).
 
-**CPU only: consumes no GPU quota**, and does not share a session with the
-GPU training kernel (``kernel/kernel.py``) so as not to hold a GPU idle while
-this runs. XGBoost has no epoch-level pause/resume -- an already-finished
-seed is skipped (``is_finished``, no data loaded); one not yet started trains
-in full within this push, which is fast enough (a few minutes per seed,
-expected) not to need a time guard the way the GPU kernel does.
+XGBoost has no epoch-level pause/resume -- an already-finished seed is
+skipped (``is_finished``, no data loaded); one not yet started trains in full
+within this push, expected to be fast enough on GPU not to need the time
+guard the GPU *neural*-baseline kernel (``kernel/kernel.py``) needs.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ INPUT = Path(os.environ.get("ADL_KAGGLE_INPUT", "/kaggle/input"))
 WORK = Path(os.environ.get("ADL_KAGGLE_WORKING", "/kaggle/working"))
 SEEDS = (0, 1, 2)
 CONFIG = "configs/train/b1_xgb_d1.yaml"
+DEVICE = "cuda"  # tests override this to "cpu" -- no GPU on a CI runner
 
 REPORT: dict[str, Any] = {"mode": MODE}
 
@@ -50,6 +53,18 @@ def probe_environment() -> None:
             log(f"  {name} {getattr(mod, '__version__', '?')}")
         except Exception as exc:  # noqa: BLE001 - a probe reports, it does not judge
             log(f"  {name}: MISSING ({exc})")
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        log(f"  gpu: {out.stdout.strip() or out.stderr.strip() or 'nvidia-smi returned nothing'}")
+    except Exception as exc:  # noqa: BLE001 - a probe reports, it does not judge
+        log(f"  gpu: nvidia-smi unavailable ({exc})")
     log_input_tree()
 
 
@@ -132,6 +147,7 @@ def main() -> None:
             f"split={split_path}",
             f"data_root={shard_root}",
             f"standardizer={std_path}",
+            f"model.device={DEVICE}",
         ]
         cfg = load_config(code_root / CONFIG, overrides=overrides)
         run_dir = run_dir_for(cfg, seed)

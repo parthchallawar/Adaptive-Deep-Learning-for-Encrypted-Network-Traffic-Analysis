@@ -142,6 +142,35 @@ def test_xgb_fits_one_booster_per_k_and_reports_val_scores(fitted: XGBBaseline) 
     assert all(0 <= fitted.best_iteration[k] < 60 for k in fitted.ks)
 
 
+def test_device_defaults_to_cpu_and_is_threaded_through() -> None:
+    assert small_xgb().params["device"] == "cpu"
+    assert small_xgb(device="cuda").params["device"] == "cuda"
+
+
+@pytest.mark.gpu
+def test_xgb_trains_on_gpu_when_device_is_cuda(train_val) -> None:
+    """Real GPU fit, not just the param threading above -- the thing that
+    actually matters (plan T8-follow-up: B1's CPU-only run ran past 10 hours
+    without finishing one seed; ``device="cuda"`` is the fix). Checked via
+    ``nvidia-smi``, not ``torch.cuda.is_available()``: xgboost's wheel bundles
+    its own CUDA runtime independent of torch's, and a CPU-only torch build
+    (this project's own local venv, in fact) would otherwise wrongly skip a
+    real, usable GPU."""
+    import shutil
+    import subprocess
+
+    if shutil.which("nvidia-smi") is None:
+        pytest.skip("no CUDA device available")
+    try:
+        subprocess.run(["nvidia-smi"], capture_output=True, timeout=10, check=True)
+    except (subprocess.CalledProcessError, OSError):
+        pytest.skip("no CUDA device available")
+
+    model = small_xgb(device="cuda")
+    model.fit(*train_val)
+    assert sorted(model.boosters) == [1, 3, 12]
+
+
 def test_xgb_predicts_nominal_logits_and_learns(fitted: XGBBaseline, train_val) -> None:
     _, val = train_val
 
@@ -185,6 +214,7 @@ def test_save_and_load_reproduce_predictions_exactly(
     loaded = XGBBaseline.load(tmp_path / "xgb", SPACE)
 
     assert loaded.ks == fitted.ks and loaded.best_iteration == fitted.best_iteration
+    assert loaded.params["device"] == fitted.params["device"]
     np.testing.assert_array_equal(
         loaded.predict_dense(val).logits, fitted.predict_dense(val).logits
     )
