@@ -11,13 +11,20 @@ straight from ``prefix_flowstats``) -- then trains seeds 0, 1, 2 in order via
 ``adl_etc.training.run_xgb.run_training``, with ``model.device=cuda`` forced
 below so XGBoost's own histogram builder runs on the GPU instead of Kaggle's
 4-core free CPU (a real run on CPU alone ran past 10 hours without finishing
-even one seed and was cancelled; GPU histogram building is the fix, not a
-smaller grid or fewer trees).
+even one seed and was cancelled). ``model.max_train_flows`` is also capped
+(``MAX_TRAIN_FLOWS`` below) -- D1's real train period is millions of flows,
+and a real local stress test at 180 classes (this baseline's real class
+count) showed even GPU-isolated per-K training (``xgb.py``'s
+``_gpu_fit_worker``) needs minutes per K; uncapped, all 13 K's x 3 seeds
+would run past a day. CNN/GRU need no such cap: mini-batch SGD never needs
+the whole train period resident at once the way XGBoost's GPU histogram
+builder does.
 
 XGBoost has no epoch-level pause/resume -- an already-finished seed is
 skipped (``is_finished``, no data loaded); one not yet started trains in full
-within this push, expected to be fast enough on GPU not to need the time
-guard the GPU *neural*-baseline kernel (``kernel/kernel.py``) needs.
+within this push, expected (with the cap above) to be fast enough not to
+need the time guard the GPU *neural*-baseline kernel (``kernel/kernel.py``)
+needs.
 """
 
 from __future__ import annotations
@@ -37,6 +44,14 @@ WORK = Path(os.environ.get("ADL_KAGGLE_WORKING", "/kaggle/working"))
 SEEDS = (0, 1, 2)
 CONFIG = "configs/train/b1_xgb_d1.yaml"
 DEVICE = "cuda"  # tests override this to "cpu" -- no GPU on a CI runner
+# D1's real train period (weeks 11-26) is millions of flows; even isolated
+# per-K (see xgb.py's _gpu_fit_worker), a real local stress test at 180
+# classes needed ~5 min/K on a 20k-row synthetic set -- at full scale this
+# baseline alone would run past a day. A uniform subsample keeps it a
+# baseline, not the main event; CNN/GRU train on the full period because
+# mini-batch SGD never needs the whole set resident at once the way
+# XGBoost's GPU histogram builder does.
+MAX_TRAIN_FLOWS = 300_000
 
 REPORT: dict[str, Any] = {"mode": MODE}
 
@@ -148,6 +163,7 @@ def main() -> None:
             f"data_root={shard_root}",
             f"standardizer={std_path}",
             f"model.device={DEVICE}",
+            f"model.max_train_flows={MAX_TRAIN_FLOWS}",
         ]
         cfg = load_config(code_root / CONFIG, overrides=overrides)
         run_dir = run_dir_for(cfg, seed)

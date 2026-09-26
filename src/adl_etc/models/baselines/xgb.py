@@ -21,6 +21,7 @@ Fewer than two present classes raises.
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,53 @@ META_JSON = "meta.json"
 
 class XGBError(RuntimeError):
     pass
+
+
+def _gpu_fit_worker(
+    conn: Any,
+    params: Mapping[str, Any],
+    x_tr: np.ndarray,
+    y_fit: np.ndarray,
+    weights: np.ndarray,
+    x_va: np.ndarray,
+    vy_fit: np.ndarray,
+) -> None:
+    """Runs one K's GPU fit in a fresh, throwaway process (spawned, never
+    forked, so it gets its own CUDA context) and sends back only the trained
+    model's bytes -- never a live booster or DMatrix.
+
+    Real bug (plan T8-follow-up, hit for real on Kaggle 2026-09-26): fitting
+    XGBoost's 180-class ``multi:softprob`` on ``device="cuda"`` for K after K
+    in one long-lived process ran K=1 fine, then failed K=2 with a CUDA
+    ``bad_alloc`` -- 10.8MB free, 262MB requested, on a 15GB T4 that K=1 alone
+    should not have come close to filling. XGBoost's GPU predictor keeps an
+    internal DMatrix prediction cache that this project found no documented,
+    reliable way to flush between fits in the same process; a fresh process
+    per K sidesteps the question entirely; the OS reclaims all of it on exit.
+    """
+    try:
+        clf = xgb.XGBClassifier(
+            objective="multi:softprob",
+            tree_method="hist",
+            n_estimators=params["n_estimators"],
+            learning_rate=params["learning_rate"],
+            max_depth=params["max_depth"],
+            subsample=params["subsample"],
+            colsample_bytree=params["colsample_bytree"],
+            early_stopping_rounds=params["early_stopping_rounds"],
+            eval_metric="mlogloss",
+            n_jobs=params["n_jobs"],
+            random_state=params["seed"],
+            verbosity=0,
+            device=params["device"],
+        )
+        clf.fit(x_tr, y_fit, sample_weight=weights, eval_set=[(x_va, vy_fit)], verbose=False)
+        raw = bytes(clf.get_booster().save_raw(raw_format="ubj"))
+        conn.send(("ok", raw, int(clf.best_iteration)))
+    except Exception as e:  # noqa: BLE001 - reported to the parent, not swallowed
+        conn.send(("error", f"{type(e).__name__}: {e}", None))
+    finally:
+        conn.close()
 
 
 def class_weights(y: np.ndarray, n_present: int, cap: float) -> np.ndarray:
@@ -144,26 +192,49 @@ class XGBBaseline:
         p = self.params
         summary: dict[int, dict[str, float]] = {}
         for k in self.ks:
-            clf = xgb.XGBClassifier(
-                objective="multi:softprob",
-                tree_method="hist",
-                n_estimators=p["n_estimators"],
-                learning_rate=p["learning_rate"],
-                max_depth=p["max_depth"],
-                subsample=p["subsample"],
-                colsample_bytree=p["colsample_bytree"],
-                early_stopping_rounds=p["early_stopping_rounds"],
-                eval_metric="mlogloss",
-                n_jobs=p["n_jobs"],
-                random_state=p["seed"],
-                verbosity=0,
-                device=p["device"],
-            )
             x_tr = prefix_flowstats(train.ppi, train.ppi_len, k)
             x_va = prefix_flowstats(val_kept.ppi, val_kept.ppi_len, k)
-            clf.fit(x_tr, y_fit, sample_weight=weights, eval_set=[(x_va, vy_fit)], verbose=False)
-            self.boosters[k] = clf.get_booster()
-            self.best_iteration[k] = int(clf.best_iteration)
+
+            if p["device"] == "cuda":
+                # A fresh process per K, not an in-process fit -- see
+                # _gpu_fit_worker's docstring for the real OOM this avoids.
+                ctx = mp.get_context("spawn")
+                parent_conn, child_conn = ctx.Pipe()
+                proc = ctx.Process(
+                    target=_gpu_fit_worker,
+                    args=(child_conn, p, x_tr, y_fit, weights, x_va, vy_fit),
+                )
+                proc.start()
+                child_conn.close()
+                status, payload, best_it = parent_conn.recv()
+                proc.join()
+                if status != "ok":
+                    raise XGBError(f"GPU training for K={k} failed in its subprocess: {payload}")
+                booster = xgb.Booster()
+                booster.load_model(bytearray(payload))
+                self.boosters[k] = booster
+                self.best_iteration[k] = int(best_it)
+            else:
+                clf = xgb.XGBClassifier(
+                    objective="multi:softprob",
+                    tree_method="hist",
+                    n_estimators=p["n_estimators"],
+                    learning_rate=p["learning_rate"],
+                    max_depth=p["max_depth"],
+                    subsample=p["subsample"],
+                    colsample_bytree=p["colsample_bytree"],
+                    early_stopping_rounds=p["early_stopping_rounds"],
+                    eval_metric="mlogloss",
+                    n_jobs=p["n_jobs"],
+                    random_state=p["seed"],
+                    verbosity=0,
+                    device=p["device"],
+                )
+                clf.fit(
+                    x_tr, y_fit, sample_weight=weights, eval_set=[(x_va, vy_fit)], verbose=False
+                )
+                self.boosters[k] = clf.get_booster()
+                self.best_iteration[k] = int(clf.best_iteration)
 
             probs = self._proba(k, x_va)
             f1 = macro_f1(probs.argmax(axis=1), vy_fit)
