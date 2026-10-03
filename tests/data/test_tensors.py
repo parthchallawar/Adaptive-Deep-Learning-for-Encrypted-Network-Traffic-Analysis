@@ -167,6 +167,25 @@ def test_meta_records_provenance(tmp_path):
     assert meta["ppi_columns"] == list(P.PPI_COLUMNS)
 
 
+def test_extra_meta_and_counters_land_in_meta_json(tmp_path):
+    with ShardWriter(
+        tmp_path, "synthetic", "x", label_map=LABEL_MAP, extra_meta={"sample_rate": 0.1}
+    ) as w:
+        w.add(make_flow(np.random.default_rng(5), ts=0.0), label=0)
+        w.add_counter("rows_before_sampling", 7)
+        w.add_counter("rows_before_sampling", 3)
+        meta = w.close()
+    assert meta["sample_rate"] == 0.1
+    assert meta["counters"]["rows_before_sampling"] == 10
+    on_disk = json.loads((tmp_path / "synthetic" / "x" / "meta.json").read_text())
+    assert on_disk["sample_rate"] == 0.1
+
+
+def test_extra_meta_cannot_overwrite_the_writers_own_fields(tmp_path):
+    with pytest.raises(ValueError, match="n_flows"):
+        ShardWriter(tmp_path, "synthetic", "x", label_map=LABEL_MAP, extra_meta={"n_flows": 0})
+
+
 def test_two_writes_same_data_agree(tmp_path):
     def write_once(name):
         rng = np.random.default_rng(5)

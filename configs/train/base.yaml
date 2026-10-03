@@ -1,0 +1,22 @@
+# Shared run-shape settings for a training config (plan T8, spec 015). A model
+# file (e.g. ../models/baselines/gru.yaml) supplies `model:`/`train:`; this
+# supplies where the data and standardizer come from, where results go, and the
+# parts of the run's name (adl_etc.utils.runinfo.make_run_name) that aren't the
+# model or the seed.
+#
+# `split`/`data_root`/`standardizer` name the real D1 export's local paths.
+# They only resolve once weeks 11-52 have been pulled from Kaggle (or on the
+# training kernel itself, where `kernel/kernel.py` overrides all three to the
+# paths its mounted datasets resolve to -- see `resolve_split_config`). A test
+# or a local smoke run overrides every one of these with its own small config.
+seed: 0
+split: configs/splits/d1_main.yaml
+data_root: data/processed
+standardizer: results/standardizer.json
+train_split: train
+val_split: val
+device: cpu
+results_root: results
+stage: bl
+variant: main
+split_name: d1main

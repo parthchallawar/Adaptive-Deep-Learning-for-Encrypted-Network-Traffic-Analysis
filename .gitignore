@@ -15,6 +15,7 @@ data/processed/*
 !data/processed/dataset-metadata.json
 results/*
 !results/.gitkeep
+!results/summaries/
 
 # Kaggle credentials (never commit the API token)
 kaggle.json

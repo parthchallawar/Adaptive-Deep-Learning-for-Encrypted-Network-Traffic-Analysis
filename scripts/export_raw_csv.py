@@ -47,6 +47,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-flows", type=int, default=500_000)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--sample-rate",
+        type=float,
+        default=1.0,
+        help="keep each row with this probability, uniformly (default 1.0: no sampling)",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=0,
+        help="seed for sampling; combined with each file's name, so re-running one day "
+        "reproduces that day's sample",
+    )
+    parser.add_argument(
+        "--check-stats",
+        action="store_true",
+        help="while exporting, check every day's pre-sampling row count and app list "
+        "against its stats-*.json and stop on the first mismatch",
+    )
+    parser.add_argument(
         "--register", action="store_true", help="hash the input files into data/manifest.json"
     )
     parser.add_argument(
@@ -85,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
         max_flows=args.max_flows,
         manifest_path=args.manifest,
         overwrite=args.overwrite,
+        sample_rate=args.sample_rate,
+        sample_seed=args.sample_seed,
+        verify=args.check_stats,
     )
     return 0
 

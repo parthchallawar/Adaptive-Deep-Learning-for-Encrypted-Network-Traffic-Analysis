@@ -1,0 +1,8 @@
+# B2 1D-CNN on D1 (spec 005, plan T8-follow-up): a second real GPU training
+# run, same shape as B3's. `seed` is overridden per queue entry
+# (kernel/run_queue.yaml) for the 3-seed protocol (spec 004).
+defaults:
+  - ../models/baselines/cnn.yaml
+  - base.yaml
+
+variant: main

@@ -1,0 +1,18 @@
+# Kaggle training queue (plan T8, spec 015). kernel/kernel.py works through
+# this in order and stops issuing new entries once under 40 minutes remain in
+# the session. An entry already finished (its run_dir's state.json) is
+# skipped without repeating it, so pushing this same queue again after a
+# paused or killed session resumes where it left off.
+#
+# `split`/`data_root` are appended by kernel.py itself (the paths its mounted
+# datasets resolve to); do not set them here.
+#
+# B3's 3 seeds already ran and finished for real (2026-09-23); left out here so
+# a fresh push does not retrain them for nothing (each push starts from an
+# empty /kaggle/working, so "already finished" only helps within one session).
+- config: configs/train/b2_cnn_d1.yaml
+  overrides: ["seed=0", "device=cuda"]
+- config: configs/train/b2_cnn_d1.yaml
+  overrides: ["seed=1", "device=cuda"]
+- config: configs/train/b2_cnn_d1.yaml
+  overrides: ["seed=2", "device=cuda"]

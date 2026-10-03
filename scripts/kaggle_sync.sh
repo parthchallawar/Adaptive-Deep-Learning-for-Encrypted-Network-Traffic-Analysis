@@ -18,13 +18,32 @@ Commands:
   version-dataset <msg>    Push a new version of an existing dataset
   push-code [msg]          Package src/ + configs/ as a Kaggle dataset so kernels
                            can import the project without internet access
-  push-kernel              Push kernel/ to Kaggle (kernel-metadata.json required)
+  push-kernel [dir]        Push a kernel folder to Kaggle (default: kernel/;
+                           e.g. kernel/export-d1). It needs a kernel-metadata.json
   pull-results <user>/<slug>   Download kernel output into results/
 EOF
 }
 
 kaggle_username() {
-  python -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'].lower())"
+  # Order: explicit env, then the legacy token file, then the owner of the account's own
+  # kernels (works with an OAuth login, which stores no plain username file).
+  if [ -n "${KAGGLE_USERNAME:-}" ]; then
+    printf '%s
+' "$KAGGLE_USERNAME" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+  if [ -f "$HOME/.kaggle/kaggle.json" ]; then
+    python -c "import json,os;print(json.load(open(os.path.expanduser('~/.kaggle/kaggle.json')))['username'].lower())"
+    return
+  fi
+  local owner
+  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | sed -n '2p' | cut -d, -f1 | cut -d/ -f1)"
+  [ -n "$owner" ] || {
+    echo "Cannot tell your Kaggle username; set KAGGLE_USERNAME." >&2
+    exit 1
+  }
+  printf '%s
+' "$owner" | tr '[:upper:]' '[:lower:]'
 }
 
 check() {
@@ -32,16 +51,18 @@ check() {
     echo "kaggle CLI not found. Install with: pip install kaggle" >&2
     exit 1
   }
-  [ -f "$HOME/.kaggle/kaggle.json" ] || {
-    echo "Missing $HOME/.kaggle/kaggle.json. Create an API token at" >&2
-    echo "Kaggle → Settings → API → Create New API Token, then place it there." >&2
+  [ -f "$HOME/.kaggle/kaggle.json" ] || [ -f "$HOME/.kaggle/credentials.json" ] || {
+    echo "No Kaggle credentials found. Run: kaggle auth login" >&2
     exit 1
   }
-  kaggle datasets list -s test-connection >/dev/null 2>&1 || {
-    echo "kaggle.json is present but authentication failed." >&2
-    echo "Regenerate the token from Kaggle → Settings → API and try again." >&2
+  # A public listing succeeds without credentials, so it proves nothing. `kernels list
+  # --mine` needs them, and prints "Authentication required" (exit 0) when they are bad.
+  out="$(kaggle kernels list --mine --page-size 1 2>&1)" || true
+  if printf '%s' "$out" | grep -qi "authentication required"; then
+    echo "The kaggle CLI is installed but not authenticated for private endpoints." >&2
+    echo "Run: kaggle auth login   (or regenerate the token: Kaggle -> Settings -> API)." >&2
     exit 1
-  }
+  fi
   echo "Kaggle CLI OK and authenticated."
 }
 
@@ -69,8 +90,29 @@ push_code() {
   # Ship only importable project code and configs — no data, no credentials.
   cp -r src "$CODE_STAGE_DIR/src"
   [ -d configs ] && cp -r configs "$CODE_STAGE_DIR/configs"
+  # `kaggle kernels push` only uploads kernel-metadata.json's own code_file, not
+  # the rest of kernel/ (found for real 2026-09-23: run_queue.yaml never
+  # reached Kaggle, and kernel.py failed reading it from a path that only
+  # exists in this git checkout). The code dataset is the reliable way to ship
+  # it instead; kernel.py looks for it under the mounted code dataset's own
+  # kernel/ directory.
+  mkdir -p "$CODE_STAGE_DIR/kernel"
+  [ -f kernel/run_queue.yaml ] && cp kernel/run_queue.yaml "$CODE_STAGE_DIR/kernel/run_queue.yaml"
   find "$CODE_STAGE_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
-  git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null || true
+  # Provenance sidecars, read by adl_etc.utils.runinfo.code_provenance() since a
+  # kernel has no .git. GIT_DIRTY covers only what is shipped (src/, configs/,
+  # kernel/run_queue.yaml): 1 if it differs from the commit, 0 if identical.
+  # When git can't say, both files are left out and the run is treated as
+  # dirty rather than as clean.
+  if git rev-parse HEAD > "$CODE_STAGE_DIR/GIT_COMMIT" 2>/dev/null; then
+    if [ -n "$(git status --porcelain -- src configs kernel/run_queue.yaml)" ]; then
+      echo 1 > "$CODE_STAGE_DIR/GIT_DIRTY"
+    else
+      echo 0 > "$CODE_STAGE_DIR/GIT_DIRTY"
+    fi
+  else
+    rm -f "$CODE_STAGE_DIR/GIT_COMMIT"
+  fi
 
   cat > "$CODE_STAGE_DIR/dataset-metadata.json" <<EOF
 {
@@ -89,11 +131,12 @@ EOF
 }
 
 push_kernel() {
-  [ -f "$KERNEL_DIR/kernel-metadata.json" ] || {
-    echo "Missing $KERNEL_DIR/kernel-metadata.json — set id/title/code_file before pushing." >&2
+  local dir="${1:-$KERNEL_DIR}"
+  [ -f "$dir/kernel-metadata.json" ] || {
+    echo "Missing $dir/kernel-metadata.json — set id/title/code_file before pushing." >&2
     exit 1
   }
-  kaggle kernels push -p "$KERNEL_DIR"
+  kaggle kernels push -p "$dir"
 }
 
 pull_results() {
@@ -109,7 +152,7 @@ case "$cmd" in
   push-dataset) push_dataset ;;
   version-dataset) version_dataset "$@" ;;
   push-code) push_code "$@" ;;
-  push-kernel) push_kernel ;;
+  push-kernel) push_kernel "$@" ;;
   pull-results) pull_results "$@" ;;
   *) usage; exit 1 ;;
 esac

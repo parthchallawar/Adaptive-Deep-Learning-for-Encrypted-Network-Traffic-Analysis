@@ -1,0 +1,29 @@
+# Evaluates a trained B3 GRU checkpoint over real D4 (plan T7's "Done when":
+# python -m adl_etc.evaluation.run --config configs/eval/d4_anomaly.yaml).
+#
+# Named after configs/splits/d4_anomaly.yaml, whose "test" split this reads --
+# but this eval treats it as straightforward multi-class classification over
+# D4's own label_map (LabelSpace.from_label_map has no held-out unknown
+# class), the same framing tests/training/test_real_d4.py already uses. The
+# benign-vs-malware open-set framing spec 005 also calls "the anomaly test"
+# is a different LabelSpace (malware ids held out as unknown) and a
+# different eval config, not built here.
+defaults:
+  - ../models/baselines/gru.yaml
+
+split: configs/splits/d4_anomaly.yaml
+eval_split: test
+data_root: data/processed
+
+# A trained run's own artefacts. T8 (the training kernel) has not been built
+# yet, so there is no standard run-directory layout to assume; these three
+# paths are given explicitly rather than inferred from a convention that
+# does not exist yet.
+checkpoint: results/proof-gru-d4/best.pt
+label_space: results/proof-gru-d4/label_space.json
+standardizer: results/proof-gru-d4/standardizer.json
+out_dir: results/proof-gru-d4
+
+seed: 0
+device: cpu
+# eval_cap omitted: uses the 250,000-flow default (spec 004/plan phase 2).

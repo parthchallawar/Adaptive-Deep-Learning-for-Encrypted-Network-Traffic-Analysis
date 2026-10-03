@@ -21,8 +21,10 @@ rounding is a loud test failure instead of every saved token silently moving.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -260,6 +262,22 @@ def _normalize_histograms(flowstats: np.ndarray, groups: dict[str, list[int]]) -
     return out
 
 
+class _HasColumns(Protocol):
+    def column(self, name: str) -> np.ndarray: ...
+
+
+class _Stacked:
+    """Several shard sets read as one (only what :meth:`Standardizer.fit` needs)."""
+
+    def __init__(self, shard_sets: Sequence[ShardSet]) -> None:
+        if not shard_sets:
+            raise ValueError("no shard sets given")
+        self._sets = list(shard_sets)
+
+    def column(self, name: str) -> np.ndarray:
+        return np.concatenate([np.asarray(s.column(name)) for s in self._sets])
+
+
 @dataclass
 class Standardizer:
     """Training-only normalisation statistics for the continuous view and the
@@ -275,7 +293,7 @@ class Standardizer:
     hash: str = ""
 
     @classmethod
-    def fit(cls, shards: ShardSet) -> Standardizer:
+    def fit(cls, shards: _HasColumns) -> Standardizer:
         ppi = shards.column("ppi")
         ppi_len = shards.column("ppi_len")
         cont = continuous(ppi, ppi_len)
@@ -303,6 +321,12 @@ class Standardizer:
         )
         obj.hash = obj._compute_hash()
         return obj
+
+    @classmethod
+    def fit_many(cls, shard_sets: Sequence[ShardSet]) -> Standardizer:
+        """Fit on several shard sets at once (a multi-week training period), giving
+        exactly what :meth:`fit` gives for the same flows in one set."""
+        return cls.fit(_Stacked(shard_sets))
 
     def _compute_hash(self) -> str:
         from adl_etc.utils.provenance import stable_hash

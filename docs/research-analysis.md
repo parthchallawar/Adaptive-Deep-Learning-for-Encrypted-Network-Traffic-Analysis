@@ -124,7 +124,7 @@ Yes, it is enough: 10M labeled flows with a full year of drift is more than any 
 
 ## 6. Kaggle training strategy (details in spec 015)
 
-Credentials are in place: `~/.kaggle/kaggle.json` for account `parthrchallawar`, CLI 2.2.4 installed and authenticating (checked 2026-09-17).
+Credentials are in place: `~/.kaggle/kaggle.json` for account `parthchallawar`, CLI 2.2.4 installed and authenticating (checked 2026-09-17).
 
 Facts to re-verify in the Kaggle UI, since they change: 30 GPU-hours per week; a session runs at most 12 h; GPU options are a P100 (16 GB) or 2xT4 (2x16 GB); about 29 GB RAM in GPU sessions; 20 GB persisted output; private dataset quota 200 GB; internet in kernels requires a phone-verified account.
 

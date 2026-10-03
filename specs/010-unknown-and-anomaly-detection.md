@@ -38,7 +38,7 @@ A deployed classifier meets applications it was never trained on and traffic tha
 
 ### Anomaly mode (D4)
 
-Same score; positives = malware flows, negatives = benign test flows. Additionally the flow-statistics XGBoost baseline provides a tabular anomaly baseline (isolation forest on flowstats) for the report.
+Same score; positives = malware flows, negatives = benign test flows. Additionally an isolation forest on flowstats provides a tabular anomaly baseline for the report.
 
 ### Explanation
 

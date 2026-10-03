@@ -1,0 +1,24 @@
+# B3: GRU (spec 005). Causal: one pass yields a prediction after every packet.
+# Trained with the multi-prefix loss, mirroring CAPE-Net's backbone.
+model:
+  name: gru
+  stem: 128
+  hidden: 256
+  layers: 2
+  dropout: 0.1
+
+train:
+  epochs: 20
+  batch_size: 4096
+  lr: 0.003
+  weight_decay: 0.0001
+  label_smoothing: 0.1
+  patience: 4
+  balanced_cap: 10.0
+  amp: true
+
+search:
+  train.lr: {loguniform: [0.0005, 0.01]}
+  train.weight_decay: {loguniform: [0.00001, 0.001]}
+  model.dropout: {choice: [0.0, 0.1, 0.2, 0.3]}
+  model.hidden: {choice: [128, 256, 384]}

@@ -55,7 +55,7 @@ Each packet k becomes a sum of embeddings:
 
 `x[k] = [log1p(size) * dir, log1p(ipt), dir, push]` standardised per channel with training mean/std; padding positions zero and masked.
 
-### Flow statistics (XGBoost baseline, MM baselines)
+### Flow statistics (MM baselines; built for B1 XGBoost, removed 2026-10-03)
 
 Standardised with training mean/std after `log1p` on count-like fields (bytes, packets, duration); histograms normalised to proportions. The 43 columns follow the DataZoo `flowstats` set used by mm-CESNET-v2 so that the public baseline can be reused unchanged.
 

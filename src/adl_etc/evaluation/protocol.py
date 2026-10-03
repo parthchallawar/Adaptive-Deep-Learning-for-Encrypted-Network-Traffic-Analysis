@@ -117,6 +117,10 @@ class LoadedSplit:
     shard_sets: dict[str, list[ShardSet]]
     masks: dict[str, list[np.ndarray | None]]
     spec: dict[str, Any] = field(repr=False)
+    boundary_trimmed: dict[str, int] = field(default_factory=dict)
+    """Flows :func:`trim_period_boundaries` dropped from each split, keyed by split
+    name (0 for a split it did not touch, e.g. every split when ``temporal`` is
+    false). Kept for reports rather than discarded, even though it is always tiny."""
 
     def close(self) -> None:
         for shard_sets in self.shard_sets.values():
@@ -147,6 +151,69 @@ def assert_no_unknown_in_train(
             labels = _masked_column(ss, mask, "label")
             if labels.size and bool(np.any(labels == -1)):
                 raise LeakageError(f"split {name!r} contains unknown-labelled flows (label=-1)")
+
+
+def trim_period_boundaries(
+    loaded: LoadedSplit, *, max_trim_fraction: float = 0.001
+) -> dict[str, int]:
+    """Drops the handful of flows a day's own file misfiles across a period
+    boundary, before :func:`assert_temporal_order` gets to see them.
+
+    The dataset card's "``TIME_FIRST`` is UTC; the mirror's own file grouping is
+    not" finding (spec 001/T5b) is about day files, but the same effect lands on
+    *period* boundaries too: a period's first day can carry a few rows whose real
+    ``ts`` (its true UTC start time) falls before the period's own start, because
+    the mirror groups that day's file by *local* midnight. Measured on the real
+    weeks-11-52 D1 export (2026-09-22): 30 of 197,505 val flows (0.015%) and a
+    similar handful at the val/test_id and test_id/test_drift boundaries.
+
+    Only runs when the split YAML sets ``temporal: true``; D3's grouped CV has no
+    meaningful time order. Processes splits in the YAML's own declared order
+    (train, then val, then test_id, ...), which is why that order must be
+    chronological for a temporal split -- exactly what spec 004 already asks for.
+    Each split's own floor is the maximum ``ts`` actually *kept* in every split
+    named before it, so a split's stray rows never leak into the next split's
+    floor. Mutates ``loaded.masks`` in place (ANDed with the leakage-rule 1
+    ``session_ids`` mask, if any) and returns what it dropped.
+
+    ``max_trim_fraction`` is the tripwire that keeps this a fix for a known,
+    tiny artifact rather than a general licence to drop overlapping flows: more
+    than that fraction of a split raises :class:`LeakageError` instead of being
+    silently absorbed, because a violation that large is not the boundary
+    artifact -- it is a real ordering bug that deserves to fail loudly.
+    """
+    dropped: dict[str, int] = {}
+    if not loaded.spec.get("temporal", False):
+        return dropped
+    floor = -1  # ts is milliseconds since the epoch: always >= 0 for real data
+    for name in loaded.spec["splits"]:
+        shard_sets = loaded.shard_sets.get(name, [])
+        existing = loaded.masks.get(name, [None] * len(shard_sets))
+        new_masks: list[np.ndarray | None] = []
+        n_before = n_after = 0
+        for ss, mask in zip(shard_sets, existing, strict=True):
+            ts = ss.column("ts")
+            base = mask if mask is not None else np.ones(len(ts), dtype=bool)
+            n_before += int(base.sum())
+            keep = base & (ts > floor)
+            n_after += int(keep.sum())
+            new_masks.append(keep)
+        n_dropped = n_before - n_after
+        if n_before and n_dropped / n_before > max_trim_fraction:
+            raise LeakageError(
+                f"split {name!r}: {n_dropped}/{n_before} flows have ts at or before "
+                f"the previous split's own ts -- {100 * n_dropped / n_before:.2f}% is too "
+                "many to be the known day-boundary artifact (cap "
+                f"{100 * max_trim_fraction:.3f}%); this looks like a real ordering bug"
+            )
+        dropped[name] = n_dropped
+        loaded.masks[name] = new_masks
+        kept_ts = [_masked_column(ss, m, "ts") for ss, m in zip(shard_sets, new_masks, strict=True)]
+        kept_ts = [t for t in kept_ts if t.size]
+        if kept_ts:
+            floor = max(floor, int(max(t.max() for t in kept_ts)))
+    loaded.boundary_trimmed = dropped
+    return dropped
 
 
 def assert_temporal_order(
@@ -192,7 +259,11 @@ def load_split(
 ) -> LoadedSplit:
     """Loads a split YAML into opened shard sets, asserting all four leakage
     rules before returning -- never after. A violated assertion raises
-    :class:`LeakageError` and nothing is left open on that failure path."""
+    :class:`LeakageError` and nothing is left open on that failure path.
+
+    For a ``temporal: true`` split, :func:`trim_period_boundaries` runs first and
+    drops the tiny, known day-boundary artifact before rule 4 gets a look; a real
+    ordering bug still raises (see that function)."""
     spec = load_split_spec(path)
     assert_no_session_overlap(spec)
     assert_standardizer_hash_consistent(spec)
@@ -226,6 +297,7 @@ def load_split(
         dataset=dataset, paths=paths, shard_sets=shard_sets, masks=masks, spec=spec
     )
     try:
+        trim_period_boundaries(loaded)
         assert_no_unknown_in_train(loaded)
         assert_temporal_order(loaded)
     except BaseException:

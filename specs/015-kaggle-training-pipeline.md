@@ -1,6 +1,6 @@
 # Spec 015: Kaggle GPU Training Pipeline
 
-- **Status:** draft
+- **Status:** implemented and run for real (plan T8). `kernel/kernel.py` and `training/run.py` built and tested locally 2026-09-22 (the resumable queue, the atomic `state.json`, the shared wall-clock guard, and `--smoke`), then pushed to Kaggle 2026-09-23: B3 (GRU), 3 seeds, on the real D1 export -- see "Training efficiency" below for the real measured throughput, epoch time and GPU-hours, replacing the estimates this spec carried until then. Getting there took 8 kernel pushes across two real, previously-untested Kaggle mechanics (a kernel's own import path before its mounted code is on `sys.path`; `kernel_sources` vs `dataset_sources` for mounting another kernel's output, and that `kaggle kernels push` ships only `kernel-metadata.json`'s `code_file`, not the rest of the local `kernel/` directory) -- each recorded in the phase-2 plan's progress log.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 6 of 18 (moved ahead of 005, same reason as 014)
@@ -12,14 +12,23 @@ All GPU work runs on Kaggle's free tier. The constraints that shape the design (
 
 | Constraint | Value (Sept 2026, per Kaggle docs/announcements) |
 |---|---|
-| GPU quota | 30 h per week, shared across P100 and T4 x2 |
-| Max session | 12 h for CPU/GPU notebooks ("Save & Run All" runs in background, no idle timeout, 12 h cap) |
+| GPU quota | 30 h per week, shared across P100 and T4 x2. **Verified 2026-09-21** on the account's Quotas page: 30 hrs (00:00 used). The page shows the total but not the reset period, so "per week" is still Kaggle's documented behaviour, not observed |
+| Max session | 12 h for CPU/GPU notebooks ("Save & Run All" runs in background, no idle timeout, 12 h cap). **Verified 2026-09-21:** the interactive session panel shows "12 hours" as the session maximum |
 | Interactive idle timeout | about 60 min |
-| GPU | P100 16 GB, or 2 x T4 16 GB (fp16 tensor cores on T4) |
-| RAM | about 29 GB in GPU sessions |
-| Disk | 20 GB persisted in `/kaggle/working`; datasets mounted read-only under `/kaggle/input` |
-| Datasets | private quota 200 GB; a dataset version is immutable |
-| Internet | must be enabled per notebook; requires a phone-verified account |
+| GPU | P100 16 GB, or 2 x T4 (fp16 tensor cores on T4). **Verified 2026-09-21:** a "GPU T4 x2" session shows two GPUs at 15 GiB each; the P100 option was not checked. Note a GPU session counts against the quota while it is open, even when idle |
+| RAM | about 29 GB in GPU sessions. **Verified 2026-09-21:** max 30 GiB |
+| Disk | 20 GB persisted in `/kaggle/working` (stated in the notebook template itself); datasets mounted read-only under `/kaggle/input`. **Verified 2026-09-21:** the session panel shows 57.6 GiB max total disk, so the 20 GB limit is on saved *output*, and scratch beyond it can live in `/kaggle/temp/` |
+| Datasets | private quota **214.75 GB** (= 200 GiB; verified 2026-09-21, 0 B used, so no private dataset has been uploaded yet); a dataset version is immutable. Private models: same 214.75 GB, unused. TPU 20 h, unused, irrelevant |
+| Internet | must be enabled per notebook; requires a phone-verified account. **Partly verified 2026-09-21:** in an interactive notebook the Settings menu offers "Turn off internet", i.e. internet is currently on for this account. Not yet verified: that a CLI-pushed kernel gets it, and which packages the image already has |
+
+### What the Kaggle image actually has (verified 2026-09-21, interactive GPU T4 x2 notebook)
+
+Python 3.12.13, torch 2.10.0+cu128, numpy 2.0.2, pandas 2.3.3, pyarrow 24.0.0, scikit-learn 1.6.1, xgboost 3.2.0, omegaconf 2.3.0, tqdm 4.67.3. **Not installed: `mlflow`, `dpkt`, `py7zr`.** Outbound HTTPS works (pypi.org and github.com both returned 200). `/kaggle/working` had 19.5 GiB free, matching the 20 GB output cap. Two consequences:
+
+- **The image is older than the dev machine** (local: numpy 2.5.3, pandas 3.0.6, pyarrow 25, torch 2.14). `pyproject.toml`'s floors (numpy >= 2.0, pandas >= 2.2, pyarrow >= 16, torch >= 2.4, scikit-learn >= 1.5, xgboost >= 2.1) all hold. The full suite was run in a throwaway venv pinned to Kaggle's exact versions (no torch, no mlflow, as on Kaggle): 453 passed, 16 skipped, and the skips are exactly the tests that need torch or mlflow. Re-run this check when the image changes or a new dependency is added.
+- **Nothing on the training path needs the missing packages.** Every module a kernel imports (`data/{ppi,flows,tensors,features,prefix_stats,manifest,cesnet_csv}`, `evaluation/*`, `utils/*`) imports with `dpkt`, `py7zr` and `mlflow` blocked. Only the PCAP and downloader modules need `dpkt`/`py7zr`. This is also why `tracking.py` never imports mlflow (spec 014).
+
+Verified 2026-09-22: a kernel pushed with the CLI gets internet (HTTP 200); datasets mount at `/kaggle/input/datasets/<owner>/<slug>/`; a CPU kernel has 4 CPUs and 31.3 GiB RAM. Not yet verified: the P100 option.
 
 A training job that assumes more than this (long sessions, workers, big models) will fail or burn the quota. The pipeline must be resumable, quota-aware, and reproducible from the repository.
 
@@ -39,7 +48,7 @@ A training job that assumes more than this (long sessions, workers, big models) 
 
 ### Credentials (confirmed 2026-09-17)
 
-`~/.kaggle/kaggle.json` holds the token for account `parthrchallawar`; Kaggle CLI 2.2.4 is installed and authenticates. `data/processed/dataset-metadata.json` and `kernel/kernel-metadata.json` carry the real slugs (`parthrchallawar/adl-encrypted-traffic-processed`, `parthrchallawar/adl-encrypted-traffic-train`). The token is gitignored and must never be printed or committed.
+`~/.kaggle/kaggle.json` holds the token for account `parthchallawar`; Kaggle CLI 2.2.4 is installed and authenticates. `data/processed/dataset-metadata.json` and `kernel/kernel-metadata.json` carry the real slugs (`parthchallawar/adl-encrypted-traffic-processed`, `parthchallawar/adl-encrypted-traffic-train`). The token is gitignored and must never be printed or committed.
 
 ### Data packaging
 
@@ -74,7 +83,8 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 - Batch 4096 (SSL two views: 2 x 4096 sequences of 31 tokens): a few GB of activations; fits with margin.
 - No DataLoader workers; a single producer thread prefetches index batches to GPU.
 - `torch.compile` optional (first-epoch compile cost about 2 min; enabled for runs > 1 h).
-- Expected throughput on T4 (to be measured in the first smoke run and recorded here): about 30k to 40k flows/s forward+backward for PAT → 3M flows/epoch in about 90 s of pure compute; real epochs 3 to 5 min including heads and augmentation. This means a 10-epoch SSL run on D1 XS train is well under 1 h, and the 12 h cap is not the binding constraint; the weekly 30 h is.
+- Expected throughput on T4 for PAT (phase 3's backbone, not yet built): about 30k to 40k flows/s forward+backward → 3M flows/epoch in about 90 s of pure compute; real epochs 3 to 5 min including heads and augmentation. Still an estimate -- unlike B3 below, nothing has measured it yet.
+- **Measured for real (plan T8, 2026-09-23): B3 (GRU) on D1's real train split (5,989,515 flows), one T4, batch 4096, AMP on.** 20 epochs took 46m35s (seed 0), 46m12s (seed 1), 46m15s (seed 2) -- 139 s/epoch average, so **about 43,000 flows/s forward+backward** (close to the PAT estimate above, for a much smaller model, on the same GPU). All 3 seeds together: **2h19m wall time, about 2.3 GPU-hours** of the 30 h/week quota (a single T4 was used per run; the session's second T4 sat idle since spec 015's own non-goal is "the second T4 is used only to run two independent seeds concurrently," not built here). This means the 10-epoch SSL runs phase 3 is sizing for are very likely well under 1 h too, and confirms the 12 h session cap is not the binding constraint for jobs this size -- the weekly 30 h is, and it has ample headroom (this run used under 8% of it).
 
 ### Weekly budget plan (example for phase 3)
 
@@ -103,7 +113,7 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 - Session killed before a checkpoint: lose at most one epoch; `state.json` written atomically (write temp + rename).
 - `pip install` from GitHub fails (internet disabled): the kernel falls back to the mounted `src/` dataset described under Code delivery; `kaggle_sync.sh push-code` creates it.
 - Mirror dataset withdrawn or altered by its uploader: `--verify` fails loudly and Route A takes over; this is the reason verification is mandatory rather than advisory.
-- Quota exhausted mid-week: the queue is ordered by priority; CPU-runnable jobs (baselines B1 to B3) are never queued on Kaggle.
+- Quota exhausted mid-week: the queue is ordered by priority; CPU-runnable jobs are never queued on Kaggle (B2 and B3 turned out to need the GPU at D1's size and were queued there in phase 2; B1 was removed 2026-10-03).
 - Output > 20 GB: never store full logits on Kaggle (spec 008 keeps top-10 logits + scores).
 - P100 vs T4 differences (fp16 speed, memory): configs are identical; throughput logged per run.
 
@@ -118,10 +128,10 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 
 ## Success criteria
 
-- First real Kaggle run (baseline B5) completes end-to-end, results pulled and appear in local MLflow, within phase 2.
-- No week exceeds the quota; every run is resumable.
+- First real Kaggle run (baseline B5) completes end-to-end, results pulled and appear in local MLflow, within phase 2. **Correction 3 (landed with T8):** B5 is spec 006's backbone (phase 3, not yet built); this criterion's real run is B3 instead. **Met 2026-09-23**: 3 seeds, results pulled with `kaggle_sync.sh pull-results` and imported with `scripts/mlflow_import.py` (`results/mlflow.db`, all 3 runs `FINISHED`).
+- No week exceeds the quota; every run is resumable. **Met**: this run used about 2.3 of the 30 weekly GPU-hours. Resumability was exercised for real too, just not needed here -- every run finished within a single push.
 
 ## Open questions
 
-- Whether kernels on this account may enable internet (phone verification). Not blocking: the code-as-dataset route and the mirror-mount route both work without it. To be settled by the first kernel push.
-- Preferred GPU (T4 x2 to run two seeds concurrently vs P100 single): decide after measuring throughput in the first smoke run.
+- Whether kernels on this account may enable internet. **Partly answered 2026-09-21:** an interactive notebook has internet on and reaches pypi.org and github.com. Still to confirm: that a CLI-pushed kernel (`enable_internet: true` in `kernel-metadata.json`) gets it too. Not blocking: code-as-dataset needs none, and the only missing packages on the training path are ones it doesn't import.
+- Preferred GPU (T4 x2 to run two seeds concurrently vs P100 single): T4 x2 is confirmed available (two 15 GiB GPUs, 30 GiB RAM); the P100 option has not been checked. Decide after measuring throughput in the first smoke run.

@@ -40,6 +40,30 @@ def git_commit(cwd: str | Path | None = None) -> str:
     return "unknown"
 
 
+def git_dirty(cwd: str | Path | None = None) -> bool | None:
+    """Whether the working tree has uncommitted changes to tracked or untracked
+    files, or ``None`` when that cannot be known (no git, not a checkout).
+
+    ``None`` is deliberately not ``False``: "we could not check" must not read
+    as "clean", because the results-table script refuses dirty runs and an
+    unknowable run has to be treated as one.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return bool(out.stdout.strip())
+
+
 def stable_hash(obj: Any) -> str:
     """SHA-256 of ``obj`` via sorted-key JSON, so the same content always hashes
     the same way regardless of dict insertion order.
