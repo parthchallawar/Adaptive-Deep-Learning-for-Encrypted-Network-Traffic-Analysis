@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+CAL_FILE = "calibration.json"
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -31,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from adl_etc.data.features import Standardizer
     from adl_etc.evaluation.artifact import DEFAULT_EVAL_CAP, EvalArrays, subsample_for_eval
+    from adl_etc.evaluation.calibration import Calibration, ece_per_k
+    from adl_etc.evaluation.dense_logits import from_causal
     from adl_etc.evaluation.plotstyle import (
         plot_accuracy_vs_k,
         plot_auroc_vs_k,
@@ -40,12 +44,18 @@ def main(argv: list[str] | None = None) -> int:
     from adl_etc.evaluation.policies import fit_cape_thresholds
     from adl_etc.evaluation.protocol import load_split
     from adl_etc.evaluation.report import CapeConfig, build_report
-    from adl_etc.models.baselines import build_model
-    from adl_etc.models.baselines.predict import predict_dense
-    from adl_etc.training.checkpoint import check_compatible, load_checkpoint
+    from adl_etc.models.baselines.predict import predict_dense, predict_heads
+    from adl_etc.models.registry import build_model
+    from adl_etc.training.checkpoint import (
+        check_compatible,
+        inference_state_dict,
+        load_checkpoint,
+    )
     from adl_etc.training.datasets import ArrayData
     from adl_etc.training.labels import LabelSpace
+    from adl_etc.utils.atomic import atomic_write_json
     from adl_etc.utils.config import load_config
+    from adl_etc.utils.provenance import file_sha256
 
     cfg = load_config(args.config, overrides=args.override)
 
@@ -71,11 +81,23 @@ def main(argv: list[str] | None = None) -> int:
         label_space_hash=label_space.hash,
         standardizer_hash=(standardizer.hash if standardizer is not None else None),
     )
-    model.load_state_dict(ckpt["model"])
+    model.load_state_dict(inference_state_dict(ckpt))
 
     device = str(cfg.get("device", "cpu"))
-    dense = predict_dense(model, sub, label_space, standardizer, device=device)
     labels_model = label_space.to_model(sub.label).astype(np.int64)
+
+    # A prefix-trained PAT carries calibration.json beside its checkpoint (spec 008):
+    # apply it and report calibrated ECE per K on this split (plan phase 3, T7).
+    cal_path = Path(str(cfg.get("calibration") or Path(str(cfg.checkpoint)).parent / CAL_FILE))
+    calibration = None
+    safe = None
+    if hasattr(model, "head_safe") and cal_path.is_file():
+        calibration = Calibration.load(cal_path, checkpoint_hash=file_sha256(cfg.checkpoint))
+        heads = predict_heads(model, sub, label_space, standardizer, device=device)
+        dense = from_causal(heads["cls"])
+        safe = heads["safe"]
+    else:
+        dense = predict_dense(model, sub, label_space, standardizer, device=device)
 
     out_dir = Path(cfg.out_dir) / "eval" / split_name
     ea = EvalArrays(
@@ -86,6 +108,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     ea.save(out_dir)
     label_space.save(out_dir / "label_space.json")
+    if calibration is not None and safe is not None:
+        np.save(out_dir / "safe.npy", safe)
+        uncalibrated = Calibration(
+            calibration.checkpoint_hash,
+            [0.0] * label_space.n_classes,
+            [1.0] * len(calibration.temperatures),
+            calibration.safe_maps,
+            calibration.n_fit,
+        )
+        cal_report = {
+            "split": split_name,
+            "calibration": cal_path.as_posix(),
+            **ece_per_k(calibration, dense.logits, labels_model, sub.ppi_len, safe_logits=safe),
+            "uncalibrated": ece_per_k(uncalibrated, dense.logits, labels_model, sub.ppi_len),
+        }
+        atomic_write_json(out_dir / "calibration_report.json", cal_report)
 
     cape_cfg = None
     cape_section = cfg.get("cape")

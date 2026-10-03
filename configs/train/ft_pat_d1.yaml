@@ -1,0 +1,44 @@
+# Spec 008 prefix fine-tuning of the PAT on D1, from scratch, 100% labels (plan phase 3,
+# T6). The design ablations (spec 008 "Design choices") are this config with one
+# override each, queued with their own `variant`:
+#   abl_ramp1  objective.ramp=1.0           (uniform loss weights)
+#   abl_ls0    train.label_smoothing=0.0
+#   abl_drop0  model.dropout=0.0
+#   abl_noside model.side_channel=false
+#   abl_noaug  finetune_augment.drop_p=0.0 finetune_augment.ipt_s=0.0
+# Every run here trains on the open-set split (150 known classes, plan T1a).
+defaults:
+  - ../models/pat.yaml
+  - base.yaml
+
+train:
+  epochs: 15
+  batch_size: 4096
+  lr: 0.001
+  weight_decay: 0.0001
+  label_smoothing: 0.1
+  patience: 3
+  balanced_cap: 10.0
+  amp: true
+  ema_decay: 0.999
+  decay_norm_and_bias: false
+
+objective:
+  name: prefix
+  ramp: 8.0
+  sd_weight: 0.2
+  sd_temperature: 2.0
+  safe_weight: 1.0
+  npp_weight: 0.1
+
+# Spec 008's low-intensity robustness augmentation, on by default (training batches
+# only): each packet dropped with p = 0.05, IPT jittered by exp(N(0, 0.1)).
+finetune_augment:
+  drop_p: 0.05
+  ipt_s: 0.1
+
+label_fraction: 1.0
+split: configs/splits/d1_open.yaml
+split_name: d1open
+stage: ft
+variant: scratch

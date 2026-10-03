@@ -1,0 +1,14 @@
+# Spec 007's "conventional SSL" comparison: masked packet modelling (30% of each
+# flow's packets blanked) on the *bidirectional* PAT. Its weights load into the causal
+# PAT for fine-tuning exactly like the others (same parameters, only the mask differs).
+# Plan phase 3, T5.
+defaults:
+  - pt_pat_base.yaml
+
+model:
+  causal: false
+
+objective:
+  name: mpm
+
+variant: mpm

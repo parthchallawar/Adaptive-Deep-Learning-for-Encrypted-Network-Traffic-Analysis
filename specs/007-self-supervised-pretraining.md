@@ -1,6 +1,6 @@
 # Spec 007: Self-Supervised Prefix-Predictive Pretraining
 
-- **Status:** draft, revised 2026-10-03 before build (see [Revisions](#revisions)). Not implemented. Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), task T5.
+- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **code built and tested locally** (`adl_etc.training.ssl`, `adl_etc.data.augment_batch`, `adl_etc.training.probes`; configs `configs/train/pt_pat_*.yaml`). Not yet run on D1 (Kaggle). Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), task T5.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 9 of 18
@@ -42,7 +42,7 @@ For a batch of flows, take two views per flow: `v1 = aug(x)` with a random crop 
 
 This is Contrastive Predictive Coding adapted to flows: the representation of a short prefix must already identify the whole flow among thousands of others. It directly targets earliness (H1). Augmentations (`drop` p~U[0,0.2], `reorder`, `ipt_jitter`, `size_jitter`, spec 003) make the representation invariant to loss and timing noise (H5).
 
-**Twin masking.** Flows whose un-augmented token sequences are identical are removed from each other's negatives (each flow's tokens are hashed once per batch; pairs with equal hashes are masked out of the denominator). Without this, the loss asks the model to separate flows that are indistinguishable by construction. Measured on the D1 probe day: 26.6% of flows share their exact token sequence with another flow, and in a random 4,096-flow batch **5.6% of anchors have an identical twin**, far from the "rare" this spec originally assumed.
+**Twin masking.** Flows whose un-augmented token sequences are identical are removed from each other's negatives (each flow's tokens are hashed once per batch; pairs with equal hashes are masked out of the denominator). Without this, the loss asks the model to separate flows that are indistinguishable by construction. Measured on D1's real training weeks (5.42M flows): 29.4% of flows share their exact token sequence with another flow, and in a random 4,096-flow batch **3.9% of anchors have an identical twin** (5.6% on the probe day), far from the "rare" this spec originally assumed.
 
 ### Combined loss
 
@@ -75,7 +75,7 @@ AdamW (lr 1e-3 peak, OneCycle, wd 0.05), batch 4096 flows (two views = 8192 forw
 ## Edge cases
 
 - Flows with `ppi_len <= 2`: contribute to NPP only where a next packet exists; PFC crop requires K <= ppi_len − 1, otherwise the flow is skipped for PFC in that batch. Measured on the D1 probe day: 0.0% of flows have `ppi_len <= 2` and 99.7% have `ppi_len >= 4`, so PFC sees almost the whole corpus.
-- Duplicate flows (identical tokens) in a batch would be false negatives in InfoNCE. Not rare (5.6% of anchors at batch 4096, measured), so they are masked (twin masking, above).
+- Duplicate flows (identical tokens) in a batch would be false negatives in InfoNCE. Not rare (3.9% of anchors at batch 4096 on D1's real training weeks, 5.6% on the probe day), so they are masked (twin masking, above).
 - Drop augmentation shortens flows; PFC crop is applied after augmentation.
 - Collapse (uniform `proj`): detected by the uniformity metric; remedy is lower temperature or higher λ_PFC.
 
@@ -114,3 +114,4 @@ AdamW (lr 1e-3 peak, OneCycle, wd 0.05), batch 4096 flows (two views = 8192 forw
 - **Twin masking** added to PFC: 5.6% of anchors in a 4,096 batch have an identical-token twin, which the original "rare, tolerated" assumption missed.
 - NPP gains the `end` target from spec 006.
 - Augmentations: batched NumPy versions on CPU first, GPU only if measurement demands it.
+- **Views, as built (2026-10-04):** the prefix view `a` gets drop, reorder, both jitters and the crop; the full view `b` gets only the jitters, and NPP is scored on `b` against the raw next tokens. "Targets are the raw next packet" only has a meaning while packet k of the view is packet k of the flow; drop and reorder break that alignment, so they live in the contrastive view, where the invariance they teach is wanted (H5).

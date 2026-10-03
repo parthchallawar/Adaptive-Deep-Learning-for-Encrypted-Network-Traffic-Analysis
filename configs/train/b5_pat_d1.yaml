@@ -1,0 +1,29 @@
+# B5 (spec 005): the PAT backbone (spec 006) trained the plain way -- cross-entropy at
+# each flow's last real packet only, no prefix supervision, no SSL, no policy. It shows
+# what the architecture alone gives, and spec 006 compares it with the CNN at K=30
+# (both full-flow-trained). Same shared recipe as every baseline (spec 005), with the
+# Transformer peak LR. Plan phase 3, T4.
+#
+# Trains on the open-set split (150 known classes, plan phase 3 T1a), like every
+# phase-3 headline run. `seed` is set per queue entry for the 3-seed protocol.
+defaults:
+  - ../models/pat.yaml
+  - base.yaml
+
+train:
+  epochs: 20
+  batch_size: 4096
+  lr: 0.001
+  weight_decay: 0.0001
+  label_smoothing: 0.1
+  patience: 4
+  balanced_cap: 10.0
+  amp: true
+
+objective:
+  name: classify
+  final_only: true
+
+split: configs/splits/d1_open.yaml
+split_name: d1open
+variant: main

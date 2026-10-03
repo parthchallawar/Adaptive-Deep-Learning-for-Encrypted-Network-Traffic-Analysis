@@ -22,6 +22,17 @@ the day it matters" (plan T6).
         session_ids: [0, 3, 7]    # optional: restrict one shared period by
                                   # session_id (D3's grouped-CV fold design)
 
+**Open-set splits** (spec 004's known/unknown class draw; plan phase 3, T1a) add
+one top-level key, inline so that it travels with every copy of the file (the
+Kaggle kernel writes a path-resolved copy elsewhere)::
+
+    unknown_classes: [3, 17, ...]            # dataset label ids held out
+
+Flows of those classes are **dropped from the training split at load time**
+(:func:`filter_unknown_from_training`); every other split keeps them, so open-set
+evaluation has real unknown flows to score. Rule 2 then also checks the held-out
+ids, not only the ``-1`` sentinel.
+
 ``session_ids`` is only ever compared *within* one period's own shard set,
 never across periods: each period may come from an independent export run
 with its own locally-scoped session_id numbering (true of D1/D2's per-week
@@ -53,7 +64,14 @@ def load_split_spec(path: str | Path) -> dict[str, Any]:
     raw = OmegaConf.to_container(OmegaConf.load(path))
     if not isinstance(raw, dict) or "dataset" not in raw or "splits" not in raw:
         raise ValueError(f"{path}: expected a mapping with 'dataset' and 'splits' keys")
-    return {str(k): v for k, v in raw.items()}
+    spec = {str(k): v for k, v in raw.items()}
+    unknown = spec.get("unknown_classes")
+    if unknown is not None:
+        ids = [int(c) for c in unknown]
+        if any(c < 0 for c in ids) or len(set(ids)) != len(ids):
+            raise ValueError(f"{path}: unknown_classes must be distinct non-negative ids")
+        spec["unknown_classes"] = sorted(ids)
+    return spec
 
 
 # --- rule 1: no period, and no (period, session_id), in two splits ----------
@@ -121,6 +139,14 @@ class LoadedSplit:
     """Flows :func:`trim_period_boundaries` dropped from each split, keyed by split
     name (0 for a split it did not touch, e.g. every split when ``temporal`` is
     false). Kept for reports rather than discarded, even though it is always tiny."""
+    unknown_filtered: dict[str, int] = field(default_factory=dict)
+    """Flows of held-out classes :func:`filter_unknown_from_training` dropped from
+    each training split (empty for a closed-set split)."""
+
+    @property
+    def unknown_classes(self) -> tuple[int, ...]:
+        """Dataset ids held out as unknown (empty for a closed-set split)."""
+        return tuple(self.spec.get("unknown_classes") or ())
 
     def close(self) -> None:
         for shard_sets in self.shard_sets.values():
@@ -139,11 +165,46 @@ def _masked_column(ss: ShardSet, mask: np.ndarray | None, name: str) -> np.ndarr
     return col if mask is None else col[mask]
 
 
+TRAIN_SPLITS = ("train",)
+
+
+def filter_unknown_from_training(
+    loaded: LoadedSplit, *, train_splits: tuple[str, ...] = TRAIN_SPLITS
+) -> dict[str, int]:
+    """Drops every flow of a held-out class from the training split(s), by
+    ANDing their masks; other splits keep those flows. A no-op for a closed-set
+    split. Returns (and records) how many flows each training split lost."""
+    held_out = np.asarray(loaded.unknown_classes, dtype=np.int64)
+    dropped: dict[str, int] = {}
+    if held_out.size == 0:
+        return dropped
+    for name in train_splits:
+        shard_sets = loaded.shard_sets.get(name, [])
+        existing = loaded.masks.get(name, [None] * len(shard_sets))
+        new_masks: list[np.ndarray | None] = []
+        n_dropped = 0
+        for ss, mask in zip(shard_sets, existing, strict=True):
+            labels = ss.column("label")
+            keep = ~np.isin(labels, held_out)
+            if mask is not None:
+                n_dropped += int((mask & ~keep).sum())
+                keep = keep & mask
+            else:
+                n_dropped += int((~keep).sum())
+            new_masks.append(keep)
+        loaded.masks[name] = new_masks
+        dropped[name] = n_dropped
+    loaded.unknown_filtered = dropped
+    return dropped
+
+
 def assert_no_unknown_in_train(
-    loaded: LoadedSplit, *, train_splits: tuple[str, ...] = ("train",)
+    loaded: LoadedSplit, *, train_splits: tuple[str, ...] = TRAIN_SPLITS
 ) -> None:
     """No flow with the shard schema's unknown sentinel (``label == -1``,
-    `tensors.ARRAY_SPEC`) may appear in a training split (spec 004 rule 2)."""
+    `tensors.ARRAY_SPEC`), and no flow of a class the split holds out, may appear
+    in a training split (spec 004 rule 2)."""
+    held_out = np.asarray(loaded.unknown_classes, dtype=np.int64)
     for name in train_splits:
         for ss, mask in zip(
             loaded.shard_sets.get(name, []), loaded.masks.get(name, []), strict=True
@@ -151,6 +212,8 @@ def assert_no_unknown_in_train(
             labels = _masked_column(ss, mask, "label")
             if labels.size and bool(np.any(labels == -1)):
                 raise LeakageError(f"split {name!r} contains unknown-labelled flows (label=-1)")
+            if labels.size and held_out.size and bool(np.isin(labels, held_out).any()):
+                raise LeakageError(f"split {name!r} contains flows of held-out unknown classes")
 
 
 def trim_period_boundaries(
@@ -297,6 +360,7 @@ def load_split(
         dataset=dataset, paths=paths, shard_sets=shard_sets, masks=masks, spec=spec
     )
     try:
+        filter_unknown_from_training(loaded)
         trim_period_boundaries(loaded)
         assert_no_unknown_in_train(loaded)
         assert_temporal_order(loaded)

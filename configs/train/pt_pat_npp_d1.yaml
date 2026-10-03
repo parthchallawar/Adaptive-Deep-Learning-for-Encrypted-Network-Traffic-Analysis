@@ -1,0 +1,11 @@
+# Spec 007 ablation: next-packet prediction only (lambda_PFC = 0). Plan phase 3, T5.
+defaults:
+  - pt_pat_base.yaml
+
+objective:
+  name: ssl
+  npp_weight: 1.0
+  pfc_weight: 0.0
+  temperature: 0.1
+
+variant: npp

@@ -1,0 +1,33 @@
+# Shared recipe for spec 007's self-supervised pretraining of the PAT on D1's training
+# weeks (plan phase 3, T5). Each pt_pat_*_d1.yaml adds its own `objective:`. Label-free;
+# the open-set split's training weeks already exclude the 30 held-out classes, so
+# pretraining never sees an unknown app's traffic either. Fine-tuning reads `best.pt`
+# (the lowest val loss on fixed, seeded validation views).
+defaults:
+  - ../models/pat.yaml
+  - base.yaml
+
+model:
+  name: pat_pretrain
+
+train:
+  epochs: 10
+  batch_size: 4096
+  lr: 0.001
+  weight_decay: 0.05
+  label_smoothing: 0.0
+  patience: 99          # no early stopping: there is no label to stop on (spec 007)
+  balanced_cap: null    # label-free: the sampler is uniform anyway
+  amp: true
+  grad_clip: 1.0
+  decay_norm_and_bias: false
+
+augment:
+  drop_p_max: 0.2
+  reorder_q: 0.05
+  ipt_s: 0.2
+  size_sd: 8.0
+
+split: configs/splits/d1_open.yaml
+split_name: d1open
+stage: pt

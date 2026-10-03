@@ -1,0 +1,14 @@
+# Spec 007 pretraining, NPP + PFC (lambda_PFC = 1): the main SSL run (plan phase 3, T5).
+# Spec 007's lambda ablation is this config with one override each:
+#   variant=npp_pfc_l05  objective.pfc_weight=0.5
+#   variant=npp_pfc_l2   objective.pfc_weight=2.0
+defaults:
+  - pt_pat_base.yaml
+
+objective:
+  name: ssl
+  npp_weight: 1.0
+  pfc_weight: 1.0
+  temperature: 0.1
+
+variant: npp_pfc
