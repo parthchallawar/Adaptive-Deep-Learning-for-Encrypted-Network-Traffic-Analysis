@@ -7,14 +7,12 @@ from pathlib import Path
 import pytest
 
 from adl_etc.models.baselines import CNNBaseline, RNNBaseline, build_model
-from adl_etc.models.baselines.xgb import XGBBaseline
 from adl_etc.models.search import DEFAULT_TRIALS, SearchSpaceError, sample_trials, to_overrides
-from adl_etc.training.labels import LabelSpace
 from adl_etc.training.loop import TrainSettings
 from adl_etc.utils.config import ConfigError, load_config, to_container
 
 CONFIGS = Path(__file__).resolve().parents[2] / "configs" / "models" / "baselines"
-NAMES = ("cnn", "gru", "lstm", "xgb")
+NAMES = ("cnn", "gru", "lstm")
 
 SPACE = {
     "train.lr": {"loguniform": [0.0005, 0.01]},
@@ -134,15 +132,6 @@ def test_torch_configs_build_their_model_and_valid_train_settings(name: str) -> 
     assert settings.lr == 0.003 and settings.balanced_cap == 10.0  # spec 005's CNN/RNN recipe
 
 
-def test_the_xgb_config_builds_the_model() -> None:
-    cfg = load_config(CONFIGS / "xgb.yaml")
-
-    model = XGBBaseline.from_config(cfg.model, LabelSpace.create(range(5)), seed=1)
-
-    assert model.params["n_estimators"] == 2000 and model.params["early_stopping_rounds"] == 50
-    assert model.params["max_train_flows"] is None
-
-
 @pytest.mark.parametrize("name", NAMES)
 def test_every_search_key_exists_in_its_config_and_yields_a_buildable_model(name: str) -> None:
     """A search over a key the config does not have would silently do nothing (or
@@ -153,11 +142,8 @@ def test_every_search_key_exists_in_its_config_and_yields_a_buildable_model(name
 
     for trial in sample_trials(space, n_trials=8, seed=0):
         cfg = load_config(path, to_overrides(trial))
-        if name == "xgb":
-            XGBBaseline.from_config(cfg.model, LabelSpace.create(range(5)))
-        else:
-            build_model(cfg.model, n_classes=5)
-            TrainSettings.from_cfg(cfg.train)
+        build_model(cfg.model, n_classes=5)
+        TrainSettings.from_cfg(cfg.train)
 
 
 def test_a_typo_in_a_search_key_is_caught_by_the_config_layer() -> None:

@@ -11,7 +11,7 @@ numbers in the headline table):
 2. **Per-K models and short flows.** :func:`~adl_etc.evaluation.metrics.logits_at_k`
    reads position ``min(K, ppi_len) - 1``, which is right for a *causal* model
    (its output at packet ``e`` is the prefix-``e`` answer). It is wrong for a model
-   trained per K (XGBoost, the CNN): for a 7-packet flow the K=10 model's answer
+   trained per K (the CNN): for a 7-packet flow the K=10 model's answer
    and the K=12 model's answer would both be filed at position 6, and a request
    for K=10 would read whichever was written last.
 

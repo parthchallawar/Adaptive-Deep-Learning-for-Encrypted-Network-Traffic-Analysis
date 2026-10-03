@@ -361,7 +361,8 @@ def test_real_d4_prefix_is_not_the_stored_whole_flow_vector() -> None:
 
 @needs_d4
 def test_prefix_flowstats_is_fast_enough_for_thirteen_evaluations() -> None:
-    """B1 evaluates 13 K values, so one call over 100k real flows must be cheap."""
+    """A per-K tabular model evaluates 13 K values, so one call over 100k real flows
+    must be cheap."""
     import time
 
     ss = ShardSet.open(D4)

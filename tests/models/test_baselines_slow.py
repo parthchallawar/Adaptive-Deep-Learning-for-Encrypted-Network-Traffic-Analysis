@@ -27,7 +27,6 @@ from adl_etc.evaluation.dense_logits import DenseLogits
 from adl_etc.evaluation.metrics import balanced_accuracy
 from adl_etc.models.baselines import build_model
 from adl_etc.models.baselines.predict import predict_dense
-from adl_etc.models.baselines.xgb import XGBBaseline
 from adl_etc.training.datasets import ArrayData, FlowBatches
 from adl_etc.training.labels import LabelSpace
 from adl_etc.training.loop import TrainSettings, fit
@@ -133,21 +132,6 @@ def check_curve(
         assert curve[0] > chance + 0.03, f"{label}: K=1 {curve[0]:.3f} vs chance {chance:.3f}"
     assert curve[-1] >= curve[0] - 0.02, f"{label}: accuracy fell with K: {curve}"
     assert curve[-1] > chance + 0.2, f"{label}: K=30 barely above chance {chance:.3f}: {curve}"
-
-
-def test_b1_xgboost_on_real_traffic_has_a_sane_curve_and_no_early_leak(real) -> None:
-    name, data, _, space = real
-    tr, va = split(data, 30_000, seed=0)
-    model = XGBBaseline(
-        space, ks=(1, 3, 6, 10, 30), n_estimators=150, early_stopping_rounds=15, n_jobs=4
-    )
-
-    model.fit(tr, va)
-    curve = bal_curve(model.predict_dense(va), va, space, [1, 3, 6, 10, 30])
-
-    check_curve(curve, chance_rate(va, space), f"B1/{name}")
-    # The plan's tripwire, on real traffic: early statistics must not beat late ones.
-    assert curve[0] <= curve[-1] + 0.02
 
 
 @pytest.mark.parametrize("model_name", ["cnn", "gru"])

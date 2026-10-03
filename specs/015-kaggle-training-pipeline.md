@@ -113,7 +113,7 @@ Route 2 is the safer default until internet-in-kernels is confirmed to work; bot
 - Session killed before a checkpoint: lose at most one epoch; `state.json` written atomically (write temp + rename).
 - `pip install` from GitHub fails (internet disabled): the kernel falls back to the mounted `src/` dataset described under Code delivery; `kaggle_sync.sh push-code` creates it.
 - Mirror dataset withdrawn or altered by its uploader: `--verify` fails loudly and Route A takes over; this is the reason verification is mandatory rather than advisory.
-- Quota exhausted mid-week: the queue is ordered by priority; CPU-runnable jobs (baselines B1 to B3) are never queued on Kaggle.
+- Quota exhausted mid-week: the queue is ordered by priority; CPU-runnable jobs are never queued on Kaggle (B2 and B3 turned out to need the GPU at D1's size and were queued there in phase 2; B1 was removed 2026-10-03).
 - Output > 20 GB: never store full logits on Kaggle (spec 008 keeps top-10 logits + scores).
 - P100 vs T4 differences (fp16 speed, memory): configs are identical; throughput logged per run.
 

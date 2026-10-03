@@ -1,8 +1,7 @@
-"""Baseline models (spec 005): B1 XGBoost (``xgb``), B2 CNN, B3 GRU/LSTM.
+"""Baseline models (spec 005): B2 CNN, B3 GRU/LSTM. (B1 XGBoost was removed
+2026-10-03; see spec 005.)
 
-``build_model`` turns a config's ``model:`` section into a torch baseline. XGBoost
-is a different kind of object (one booster per K) and is imported explicitly from
-``adl_etc.models.baselines.xgb``, so importing this package needs no xgboost.
+``build_model`` turns a config's ``model:`` section into a torch baseline.
 """
 
 from __future__ import annotations

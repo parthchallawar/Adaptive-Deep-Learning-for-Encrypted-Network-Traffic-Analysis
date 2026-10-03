@@ -38,7 +38,6 @@ Hardware documented per run: Kaggle T4/P100 for GPU numbers, the owner's laptop 
 
 ## Edge cases
 
-- XGBoost has no FLOPs in the DL sense: report tree count and depth, and latency only.
 - 30pktTCNET is non-causal: streaming latency reported as "one full pass per packet" (its real cost in an anytime setting), which is part of the argument for causal models.
 - Thermal throttling on the laptop: interleave models and repeat twice; report the minimum median.
 

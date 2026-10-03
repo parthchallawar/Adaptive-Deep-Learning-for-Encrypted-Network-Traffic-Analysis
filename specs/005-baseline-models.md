@@ -1,6 +1,6 @@
 # Spec 005: Baseline Models
 
-- **Status:** partially implemented (plan T6: B1 XGBoost, B2 CNN, B3 GRU/LSTM built and tested on real D3/D4, B4 deferred to phase 3; plan T7, 2026-09-22: P-ECHO and P-CAPE built in `evaluation/policies.py` exactly as the table below describes, including the energy gate and the min-support-20 fallback; P-RL deferred to phase 3)
+- **Status:** partially implemented (plan T6: B2 CNN, B3 GRU/LSTM built and tested on real D3/D4, B4 deferred to phase 3; **B1 XGBoost removed 2026-10-03**, see its section; plan T7, 2026-09-22: P-ECHO and P-CAPE built in `evaluation/policies.py` exactly as the table below describes, including the energy gate and the min-support-20 fallback; P-RL deferred to phase 3)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 7 of 18
@@ -8,11 +8,11 @@
 
 ## Problem
 
-The research claims are comparative. Without strong, fairly tuned baselines the results are not defensible. Baselines must cover (a) the classical tabular approach, (b) local-pattern and sequential deep models, (c) the public state-of-the-art metadata-only encoder, and (d) the closest adaptive-inference policies so that contributions C1 to C3 are each compared to the right prior.
+The research claims are comparative. Without strong, fairly tuned baselines the results are not defensible. Baselines must cover (a) the classical tabular approach (no longer covered since B1 was removed, see below), (b) local-pattern and sequential deep models, (c) the public state-of-the-art metadata-only encoder, and (d) the closest adaptive-inference policies so that contributions C1 to C3 are each compared to the right prior.
 
 ## Goals
 
-- Implement and tune: XGBoost (flow statistics), 1D-CNN, GRU and LSTM (sequence), the public CESNET 30pktTCNET encoder (frozen and fine-tuned), a fixed-K Transformer (our backbone without any adaptive parts).
+- Implement and tune: 1D-CNN, GRU and LSTM (sequence), the public CESNET 30pktTCNET encoder (frozen and fine-tuned), a fixed-K Transformer (our backbone without any adaptive parts).
 - Reproduce three adaptive-policy baselines on top of any backbone: global max-prob threshold with per-K cascade (ECHO-style), per-class threshold + energy gate at fixed K (CAPE-Net-style), and a Q-learning stopper (FastFlow-style, simplified).
 - Evaluate all baselines with the spec-004 harness at fixed K and, where applicable, adaptively.
 
@@ -23,11 +23,11 @@ The research claims are comparative. Without strong, fairly tuned baselines the 
 
 ## Models
 
-### B1 XGBoost on flow statistics
+### B1 XGBoost on flow statistics (removed 2026-10-03)
 
-- Input: the `FLOWSTATS_DIM` = 46 flow statistics (spec 003; DataZoo's own vector has 43 and is a different vector, never mixed). At every K the statistics come from `adl_etc.data.prefix_stats.prefix_flowstats(ppi, ppi_len, K)`, which recomputes **every** column from the first K PPI entries alone and never reads the stored whole-flow vector, giving an honest "early" tabular baseline. Consequences (tested): `prefix_flowstats(30)` does **not** equal the stored `flowstats` (the PPI holds only payload packets, so `PACKETS`/`BYTES`/`DURATION` count those; only the PPI-derived columns `PPI_LEN`, `PPI_DURATION`, `PPI_ROUNDTRIPS` and the four histograms match exactly), and only `FLAG_PSH` is recoverable from the PPI, so the other five flag columns are 0. B1 is trained once per K in the spec-004 grid. Standardisation is a no-op for trees; a model that needs it must fit its own standardiser on prefix features at the same K, since the shipped `Standardizer` is fit on whole-flow statistics.
-- `xgboost.XGBClassifier(tree_method="hist", n_estimators<=2000, early_stopping_rounds=50)`, class weights inverse-frequency-capped.
-- CPU, local. Also the model behind the dashboard's "explain" panel (feature importances) if time permits.
+**Removed by owner decision.** B1 was built and tested in phase 2 (T6): one `XGBClassifier` per K on `adl_etc.data.prefix_stats.prefix_flowstats(ppi, ppi_len, K)`, the leakage-safe prefix version of the 46 flow statistics. Its real D1 runs never completed. The CPU kernel took over 10 hours for one seed. The GPU kernel ran out of memory across successive K fits and, once isolated per K, still needed several minutes per K at 180 classes, so it was capped at 300k training flows. That run was cancelled on Kaggle before finishing, and no tracked B1 result exists. Its code (`models/baselines/xgb.py`, `training/run_xgb.py`, `kernel/train-b1/`, configs, tests) is deleted; the last commit containing it is `0550054`. `prefix_flowstats` is kept as a data-layer feature.
+
+Consequence: the baseline set no longer has a classical tabular model, so the write-up cannot claim to beat one. If one is needed later, restore B1 from git rather than rebuilding it.
 
 ### B2 1D-CNN
 
@@ -73,12 +73,11 @@ AdamW, weight decay 1e-4, OneCycle LR (peak 3e-3 for CNN/RNN, 1e-3 for Transform
 ## Edge cases
 
 - 30pktTCNET expects DataZoo's PPI scaling (IPT and size normalisations and clipping); the adapter reproduces DataZoo's `ppi_transform` exactly and is unit-tested against a DataZoo-produced batch.
-- B1 prefix statistics for K=1 are degenerate (duration 0, one packet): allowed; the curve starts low by construction.
 - P-CAPE per-class thresholds for classes with < 20 val flows fall back to the global threshold (as CAPE-Net's "min support 20").
 
 ## Performance considerations
 
-- B1 to B3 train on CPU in under an hour each on 3M flows; B4/B5 on Kaggle GPU in under 2 hours.
+- B2 and B3 train on Kaggle GPU (B3: 46 minutes per seed on 6M flows, measured); B4/B5 on Kaggle GPU in under 2 hours.
 - Fixed-K evaluation of non-causal models is limited to 13 K values (spec 004) to bound cost.
 
 ## Testing

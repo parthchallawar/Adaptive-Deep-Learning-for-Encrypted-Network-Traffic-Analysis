@@ -1,4 +1,8 @@
-"""Flow statistics as observed after K packets (spec 005 B1, plan phase 2 T4).
+"""Flow statistics as observed after K packets (plan phase 2 T4).
+
+Built for spec 005's B1 (XGBoost), which was removed 2026-10-03. Kept because it
+is the only leakage-safe early tabular feature in the project; it has no model
+consumer at present.
 
 The stored ``flowstats`` vector (:data:`~adl_etc.data.ppi.FLOWSTATS_COLUMNS`) is
 computed from the **whole** flow: ``BYTES``, ``PACKETS`` and ``DURATION`` are
@@ -32,9 +36,8 @@ Consequences, deliberate and tested (``tests/data/test_prefix_stats.py``):
 * Histograms are raw counts, like the stored ones; the ``Standardizer``
   renormalises them per group. Note the ``Standardizer`` is fit on *whole-flow*
   statistics, so its means and scales are the wrong ones for these values. That
-  is harmless for tree models (a monotone rescaling changes nothing), which is
-  what B1 is; a model that cares should fit its own standardiser on prefix
-  features at the same K.
+  is harmless for tree models (a monotone rescaling changes nothing); a model
+  that cares should fit its own standardiser on prefix features at the same K.
 """
 
 from __future__ import annotations

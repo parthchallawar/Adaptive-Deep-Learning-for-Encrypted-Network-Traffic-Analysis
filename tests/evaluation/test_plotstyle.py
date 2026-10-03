@@ -32,7 +32,7 @@ def test_plot_accuracy_vs_k_writes_a_file(tmp_path):
 def test_plot_accuracy_vs_k_handles_several_series(tmp_path):
     out = tmp_path / "acc_multi.png"
     S.plot_accuracy_vs_k(
-        {"gru": {1: 0.3, 30: 0.9}, "xgb": {1: 0.2, 30: 0.8}}, out
+        {"gru": {1: 0.3, 30: 0.9}, "cnn": {1: 0.2, 30: 0.8}}, out
     )
     assert out.exists()
 

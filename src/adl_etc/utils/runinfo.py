@@ -36,7 +36,6 @@ _TRACKED_LIBRARIES = (
     "omegaconf",
     "torch",
     "scikit-learn",
-    "xgboost",
     "mlflow",
     "dpkt",
 )
