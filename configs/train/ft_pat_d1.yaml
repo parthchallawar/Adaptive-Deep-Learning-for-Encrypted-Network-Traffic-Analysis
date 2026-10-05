@@ -20,6 +20,7 @@ train:
   patience: 3
   balanced_cap: 10.0
   amp: true
+  samples_per_epoch: null   # null = one pass over the training set per epoch
   ema_decay: 0.999
   decay_norm_and_bias: false
 

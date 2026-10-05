@@ -19,6 +19,7 @@ train:
   patience: 99          # no early stopping: there is no label to stop on (spec 007)
   balanced_cap: null    # label-free: the sampler is uniform anyway
   amp: true
+  samples_per_epoch: null   # null = one pass over the training set per epoch
   grad_clip: 1.0
   decay_norm_and_bias: false
 
