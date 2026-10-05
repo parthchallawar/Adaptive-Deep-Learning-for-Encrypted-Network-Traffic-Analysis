@@ -7,13 +7,14 @@
 # `split`/`data_root`/`standardizer` are set by kernel.py itself (the paths its mounted
 # datasets resolve to); do not set them here.
 #
-# PHASE 3, KAGGLE WEEK 1, PART A (plan phase 3, "Order and parallelism"):
-#   1. B5 (spec 005/006), 3 seeds: the first PAT runs on real D1, and the measurement
-#      of the PAT's real throughput (spec 015).
-#   2. T6's design ablations (spec 008 "Design choices"): the scratch prefix-trained PAT
-#      at 100% labels, seed 0, with the defaults and with each alternative. Their val
-#      numbers decide the settings for SSL (part B: the side channel changes the input)
-#      and for the fine-tuning grid; decisions go in the plan before part B is queued.
+# PHASE 3, KAGGLE WEEK 1, PART A1 (plan phase 3, "Order and parallelism"; sized from the
+# throughput smoke run #2 measured on a T4: B5 ~13,400 flows/s, prefix fine-tuning
+# ~11,600, i.e. ~2.4 h and ~2.1 h per full run): ~9.6 GPU-hours, one session.
+#   1. B5 (spec 005/006), 3 seeds: the first real PAT runs on D1.
+#   2. The design-ablation reference: the scratch prefix-trained PAT with every default,
+#      100% labels, seed 0 (also the fine-tuning grid's scratch-100% seed 0).
+# Part A2 (the five single-change design ablations, ~10.7 h at full budget) follows in
+# its own session; their val numbers decide SSL's input (side channel) and the grid.
 # Phase 2's entries (B2, B3 on d1_main; all finished) were removed; the open-set
 # re-runs of B2/B3 (T1b) are queued in whichever week has spare quota.
 - config: configs/train/b5_pat_d1.yaml
@@ -24,13 +25,3 @@
   overrides: ["seed=2", "device=cuda"]
 - config: configs/train/ft_pat_d1.yaml
   overrides: ["seed=0", "device=cuda"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_ramp1", "objective.ramp=1.0"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_ls0", "train.label_smoothing=0.0"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_drop0", "model.dropout=0.0"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_noside", "model.side_channel=false"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_noaug", "finetune_augment.drop_p=0.0", "finetune_augment.ipt_s=0.0"]
