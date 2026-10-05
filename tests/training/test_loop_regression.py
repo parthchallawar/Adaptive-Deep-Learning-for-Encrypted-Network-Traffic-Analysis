@@ -31,7 +31,7 @@ from tests.training.util import make_cfg, make_flows, make_info, write_shards
 
 GOLDEN = Path(__file__).with_name("golden_loop.json")
 N_CLASSES = 4
-TIMING = {"epoch_seconds", "flows_per_sec"}
+TIMING = {"epoch_seconds", "flows_per_sec", "train_seconds", "train_flows_per_sec"}
 
 
 def _torch_minor() -> str:

@@ -34,7 +34,7 @@ from tests.training.util import (
 
 N_CLASSES = 4
 SPACE = LabelSpace.create(known=range(N_CLASSES))
-TIMING = {"epoch_seconds", "flows_per_sec"}
+TIMING = {"epoch_seconds", "flows_per_sec", "train_seconds", "train_flows_per_sec"}
 
 
 @pytest.fixture

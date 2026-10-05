@@ -488,7 +488,8 @@ def fit(
                 weighted = value.detach() * len(idx)
                 part_sums[part] = part_sums[part] + weighted if part in part_sums else weighted
 
-        train_loss = float(loss_sum) / len(order)
+        train_loss = float(loss_sum) / len(order)  # float() waits for the GPU
+        train_seconds = time.perf_counter() - started
         if not math.isfinite(train_loss):
             raise TrainingError(f"non-finite training loss ({train_loss}) in epoch {epoch}")
 
@@ -512,6 +513,9 @@ def fit(
             "lr": float(opt.param_groups[0]["lr"]),
             "epoch_seconds": seconds,
             "flows_per_sec": len(order) / seconds if seconds > 0 else 0.0,
+            # training alone, without validation: the throughput spec 015 budgets with
+            "train_seconds": train_seconds,
+            "train_flows_per_sec": len(order) / train_seconds if train_seconds > 0 else 0.0,
         }
         history.append(row)
 

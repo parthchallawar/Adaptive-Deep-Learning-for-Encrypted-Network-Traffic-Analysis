@@ -259,7 +259,8 @@ def test_ssl_pretraining_runs_resumes_exactly_probes_and_feeds_fine_tuning(tmp_p
 
     assert first.status == "paused" and second.status == "finished"
     strip = lambda h: [{k: v for k, v in r.items()  # noqa: E731
-                        if k not in ("epoch_seconds", "flows_per_sec")} for r in h]  # fmt: skip
+                        if k not in ("epoch_seconds", "flows_per_sec", "train_seconds",
+                                      "train_flows_per_sec")} for r in h]  # fmt: skip
     assert strip(second.history) == strip(whole.history)  # augmented views and all
     row = whole.history[-1]
     assert {"train_npp", "train_pfc", "train_pfc_top1", "val_ssl_loss", "val_knn_acc",

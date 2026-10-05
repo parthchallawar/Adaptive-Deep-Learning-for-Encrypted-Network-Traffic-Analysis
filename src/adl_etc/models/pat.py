@@ -99,13 +99,26 @@ class Block(nn.Module):
         h = h + self.drop(self.out(attended))
         return h + self.drop(self.ff(self.norm2(h)))
 
+    def _attend(
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, allowed: torch.Tensor | None
+    ) -> torch.Tensor:
+        """Scaled dot-product attention written out, with the scores and softmax in
+        fp32 even under fp16 autocast (spec 006). At 31 positions the
+        ``[B, H, 31, 31]`` score tensor is tiny, and unlike the fused GPU kernels
+        (whose backward pass is non-deterministic: Kaggle's T4 warned about the
+        memory-efficient kernel in the phase-3 smoke run) this is deterministic."""
+        with torch.autocast(device_type=q.device.type, enabled=False):
+            scores = (q.float() @ k.float().transpose(-2, -1)) * (self.d_head**-0.5)
+            if allowed is not None:
+                scores = scores.masked_fill(~allowed, float("-inf"))
+            weights = scores.softmax(dim=-1)
+        weights = F.dropout(weights, self.attn_dropout, self.training)
+        return weights.to(v.dtype) @ v
+
     def forward(self, h: torch.Tensor, allowed: torch.Tensor) -> torch.Tensor:
         """``allowed`` ``[B, 1, T, T]`` bool: True where query i may attend key j."""
         q, k, v = (self._split(t) for t in self.qkv(self.norm1(h)).chunk(3, dim=-1))
-        attended = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=allowed, dropout_p=self.attn_dropout if self.training else 0.0
-        )
-        return self._finish(h, attended)
+        return self._finish(h, self._attend(q, k, v, allowed))
 
     def step(
         self, x: torch.Tensor, cache: dict[str, torch.Tensor] | None
@@ -117,8 +130,7 @@ class Block(nn.Module):
         if cache is not None:
             k = torch.cat([cache["k"], k], dim=2)
             v = torch.cat([cache["v"], v], dim=2)
-        attended = F.scaled_dot_product_attention(q, k, v)
-        return self._finish(x, attended), {"k": k, "v": v}
+        return self._finish(x, self._attend(q, k, v, None)), {"k": k, "v": v}
 
 
 def _entropy(logits: torch.Tensor) -> torch.Tensor:

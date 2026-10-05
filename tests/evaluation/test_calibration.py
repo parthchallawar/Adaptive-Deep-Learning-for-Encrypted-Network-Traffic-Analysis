@@ -180,3 +180,34 @@ def test_a_k_no_flow_reaches_gets_a_neutral_map() -> None:
     assert cal.n_fit[10:] == [0] * 20 and cal.temperatures[10:] == [1.0] * 20
     assert {m.kind for m in cal.safe_maps[10:]} == {"constant"}
     assert CAL.ece_per_k(cal, logits, labels, ppi_len, ks=(30,))["ece_k30"] is None
+
+
+def test_the_isotonic_map_keeps_only_block_edges() -> None:
+    """The phase-3 smoke run wrote a 135 MB calibration.json: every distinct x was
+    kept although a map has a few dozen constant blocks."""
+    rng = np.random.default_rng(8)
+    x = rng.uniform(size=200_000)
+    y = (rng.uniform(size=200_000) < x).astype(float)
+
+    th, vals = CAL.isotonic_fit(x, y)
+
+    n_blocks = len(np.unique(vals))
+    assert len(th) <= 2 * n_blocks + 2 < 5_000  # (predictions unchanged: the sklearn test)
+    assert (np.diff(vals) >= 0).all() and (np.diff(th) > 0).all()
+
+
+def test_capped_fits_stay_accurate_and_seeded() -> None:
+    logits, safe, labels, ppi_len, c = synthetic_eval(n=20000, seed=9)
+    counts = np.bincount(labels[labels >= 0], minlength=c)
+    kw = dict(class_counts=counts, cap=None, checkpoint_hash="h")
+    full = CAL.fit_calibration(logits, safe, labels, ppi_len, **kw,
+                               temperature_cap=10**9, isotonic_cap=10**9)  # fmt: skip
+    capped = CAL.fit_calibration(logits, safe, labels, ppi_len, **kw,
+                                 temperature_cap=2000, isotonic_cap=3000, seed=1)  # fmt: skip
+    again = CAL.fit_calibration(logits, safe, labels, ppi_len, **kw,
+                                temperature_cap=2000, isotonic_cap=3000, seed=1)  # fmt: skip
+
+    assert capped.temperatures == again.temperatures  # seeded
+    for k in (1, 3, 8):
+        assert capped.temperatures[k - 1] == pytest.approx(full.temperatures[k - 1], rel=0.1)
+    assert capped.n_fit == full.n_fit  # the record still counts every flow that reached K

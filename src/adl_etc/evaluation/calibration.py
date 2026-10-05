@@ -75,7 +75,10 @@ def _log_softmax(x: np.ndarray) -> np.ndarray:
 
 
 def nll(logits: np.ndarray, labels: np.ndarray, temperature: float = 1.0) -> float:
-    logp = _log_softmax(np.asarray(logits, dtype=np.float64) / temperature)
+    logits = np.asarray(logits)
+    if logits.dtype not in (np.float32, np.float64):
+        logits = logits.astype(np.float32)
+    logp = _log_softmax(logits / np.asarray(temperature, dtype=logits.dtype))
     return float(-logp[np.arange(len(labels)), labels].mean())
 
 
@@ -86,12 +89,12 @@ def fit_temperature(
     ``log T`` (NLL is unimodal in T for fixed logits). ``T = 1`` is returned
     unchanged when it is already at least as good, so the fit never makes NLL
     worse."""
-    logits = np.asarray(logits, dtype=np.float64)
+    logits = np.asarray(logits, dtype=np.float32)
     a, b = math.log(low), math.log(high)
     ratio = (math.sqrt(5) - 1) / 2
     c, d = b - ratio * (b - a), a + ratio * (b - a)
     fc, fd = nll(logits, labels, math.exp(c)), nll(logits, labels, math.exp(d))
-    for _ in range(60):
+    for _ in range(40):  # brackets log T to ~1e-8 of its 6-wide start
         if fc < fd:
             b, d, fd = d, c, fc
             c = b - ratio * (b - a)
@@ -140,6 +143,17 @@ def isotonic_fit(
             sizes.append(s1 + s2)
             counts.append(n1 + n2)
     fitted = np.repeat(np.array(values), np.array(counts))
+    # Keep only the first and last point of each constant block: interpolation
+    # between the kept points is identical to interpolation over all of them, and a
+    # real fit has a few dozen blocks over up to ~10^5 distinct x (the phase-3
+    # smoke run's untrimmed calibration.json was 135 MB).
+    if len(fitted) > 2:
+        change = np.diff(fitted) != 0
+        keep = np.zeros(len(fitted), dtype=bool)
+        keep[[0, -1]] = True
+        keep[1:][change] = True  # first point of a new block
+        keep[:-1][change] = True  # last point of the block before it
+        ux, fitted = ux[keep], fitted[keep]
     return ux, fitted
 
 
@@ -262,6 +276,13 @@ class Calibration:
         return cal
 
 
+def _sample(n: int, cap: int, rng: np.random.Generator) -> np.ndarray:
+    """All of ``0..n-1`` if ``n <= cap``, else a sorted seeded sample of ``cap``."""
+    if n <= cap:
+        return np.arange(n)
+    return np.sort(rng.choice(n, size=cap, replace=False))
+
+
 def reached(ppi_len: np.ndarray, labels: np.ndarray, k: int) -> np.ndarray:
     """The flows calibrated at K: known class (label >= 0) and ``ppi_len >= k``."""
     return (np.asarray(labels) >= 0) & (np.asarray(ppi_len) >= k)
@@ -278,9 +299,17 @@ def fit_calibration(
     checkpoint_hash: str,
     min_isotonic: int = 200,
     ece_ks: tuple[int, ...] = (3, 8, 30),
+    temperature_cap: int = 20_000,
+    isotonic_cap: int = 100_000,
+    seed: int = 0,
 ) -> Calibration:
     """Fit spec 008's calibration on validation arrays (model-index ``labels``,
-    ``-1`` for unknown-class flows, which are skipped)."""
+    ``-1`` for unknown-class flows, which are skipped).
+
+    Each K's temperature (one scalar) is fitted on a seeded sample of at most
+    ``temperature_cap`` of its flows and each isotonic map on at most
+    ``isotonic_cap``: ample for what they estimate, and it keeps the whole fit to
+    seconds (the phase-3 smoke run's uncapped fit took ~17 minutes on Kaggle)."""
     from adl_etc.evaluation.metrics import ece
 
     n, k_max, c = np.shape(cls_logits)
@@ -300,15 +329,18 @@ def fit_calibration(
             temperatures.append(1.0)
             maps.append(SafeMap(kind="constant", values=[0.5]))
             continue
-        z = np.asarray(cls_logits[rows, k - 1], dtype=np.float64) + adjustment
+        z = np.asarray(cls_logits[rows, k - 1], dtype=np.float32) + adjustment.astype(np.float32)
         y = labels[rows]
-        temp = fit_temperature(z, y)
+        rng = np.random.default_rng([seed, k])
+        t_rows = _sample(len(y), temperature_cap, rng)
+        temp = fit_temperature(z[t_rows], y[t_rows])
         temperatures.append(temp)
 
         correct = (z.argmax(-1) == y).astype(np.float64)
         s = np.asarray(safe_logits[rows, k - 1], dtype=np.float64)
         if rows.sum() >= min_isotonic:
-            th, vals = isotonic_fit(_sigmoid(s), correct)
+            i_rows = _sample(len(y), isotonic_cap, rng)
+            th, vals = isotonic_fit(_sigmoid(s[i_rows]), correct[i_rows])
             maps.append(SafeMap(kind="isotonic", thresholds=th.tolist(), values=vals.tolist()))
         else:
             a, b = platt_fit(_sigmoid(s), correct)
