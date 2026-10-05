@@ -89,11 +89,12 @@ def predict_heads(
     device: str = "cpu",
 ) -> dict[str, np.ndarray]:
     """Per-position outputs of a causal model that returns a dict of heads (the
-    PAT) for every flow in ``data``, ``[N, 30, ...]`` each, in one pass. ``cls``
-    is kept in float16 (the ``EvalArrays`` precision; a whole capped split of
-    150-class logits is otherwise twice the memory), every other head in float32.
-    Used by calibration (plan phase 3, T7), which needs ``cls`` and ``safe``
-    from the same pass."""
+    PAT) for every flow in ``data``, ``[N, 30, ...]`` each, in one pass, in
+    float32 like :func:`predict_dense` (NumPy arithmetic on float16 is emulated
+    and ~4x slower: a float16 ``cls`` made the phase-3 Kaggle smoke run's report
+    take ~20 minutes; ``EvalArrays`` still stores float16 on disk). Used by
+    calibration (plan phase 3, T7), which needs ``cls`` and ``safe`` from the
+    same pass."""
     if not bool(getattr(model, "causal", False)):
         raise ValueError("predict_heads is for causal models with per-position heads")
     dev = torch.device(device)
@@ -110,8 +111,7 @@ def predict_heads(
             for head in wanted:
                 arr = result[head].float().cpu().numpy()
                 if head not in out:
-                    dtype = np.float16 if head == "cls" else np.float32
-                    out[head] = np.zeros((len(data), *arr.shape[1:]), dtype=dtype)
+                    out[head] = np.zeros((len(data), *arr.shape[1:]), dtype=np.float32)
                 out[head][idx] = arr
     finally:
         model.train(was_training)
