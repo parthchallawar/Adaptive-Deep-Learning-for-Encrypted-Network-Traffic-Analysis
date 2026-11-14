@@ -7,29 +7,32 @@
 # `split`/`data_root`/`standardizer` are set by kernel.py itself (the paths its mounted
 # datasets resolve to); do not set them here.
 #
-# PHASE 3, KAGGLE WEEK 1, SESSION 1 (~6.6 GPU-hours total, safe within the 11.5h guard):
-#   1. Reference scratch prefix PAT (100% labels, seed 0, 8 epochs)
-#   2. The five single-change design ablations (4 epochs each):
-#        - abl_noside: model.side_channel=false
-#        - abl_ramp1:  objective.ramp=1.0 (uniform loss)
-#        - abl_ls0:    train.label_smoothing=0.0
-#        - abl_drop0:  model.dropout=0.0
-#        - abl_noaug:  finetune_augment disabled
-#   3. Golden SSL Pretraining (NPP + PFC with twin masking, seed 0, 8 epochs)
-#   4. B5 Full-Flow PAT Baseline (seed 0, 8 epochs)
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "train.epochs=8"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_noside", "model.side_channel=false", "train.epochs=4"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_ramp1", "objective.ramp=1.0", "train.epochs=4"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_ls0", "train.label_smoothing=0.0", "train.epochs=4"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_drop0", "model.dropout=0.0", "train.epochs=4"]
-- config: configs/train/ft_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "variant=abl_noaug", "finetune_augment.drop_p=0.0", "finetune_augment.ipt_s=0.0", "train.epochs=4"]
+# PHASE 3, SESSION 2 (~5 GPU-hours; Session 1 = kernel version 14, 2026-11-13, 7h19m).
+# Needs Session 1's output mounted: kernel-metadata.json lists this kernel's own slug in
+# `kernel_sources`, so the SSL run below is restored and skipped, and its best.pt is
+# what the SSL fine-tunes start from. Runs on the main account (the mount is private).
+#   0. SSL pretraining (restored from Session 1, skipped; must match its overrides)
+#   1. 4-epoch reference: the control Session 1's 4-epoch ablations lacked (the LR
+#      schedule spans train.epochs, so the 8-epoch run's epoch 4 is not comparable)
+#   2. SSL fine-tune, 100% labels, 8 epochs (vs Session 1's 8-epoch scratch run: H1)
+#   3. 10% labels: scratch vs SSL (config defaults, 15 epochs)
+#   4. 1% labels: scratch vs SSL (config defaults, 6 x 512k-sample epochs)
+#   5. B3 GRU and B2 CNN re-run on the open-set split (one seed each)
 - config: configs/train/pt_pat_npp_pfc_d1.yaml
   overrides: ["seed=0", "device=cuda", "train.epochs=8"]
-- config: configs/train/b5_pat_d1.yaml
-  overrides: ["seed=0", "device=cuda", "train.epochs=8"]
+- config: configs/train/ft_pat_d1.yaml
+  overrides: ["seed=0", "device=cuda", "variant=abl_ref4", "train.epochs=4"]
+- config: configs/train/ft_pat_ssl_d1.yaml
+  overrides: ["seed=0", "device=cuda", "train.epochs=8", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
+- config: configs/train/ft_pat_d1_l10.yaml
+  overrides: ["seed=0", "device=cuda"]
+- config: configs/train/ft_pat_ssl_d1_l10.yaml
+  overrides: ["seed=0", "device=cuda", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
+- config: configs/train/ft_pat_d1_l01.yaml
+  overrides: ["seed=0", "device=cuda"]
+- config: configs/train/ft_pat_ssl_d1_l01.yaml
+  overrides: ["seed=0", "device=cuda", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
+- config: configs/train/b3_gru_d1.yaml
+  overrides: ["seed=0", "device=cuda", "split=configs/splits/d1_open.yaml", "split_name=d1open"]
+- config: configs/train/b2_cnn_d1.yaml
+  overrides: ["seed=0", "device=cuda", "split=configs/splits/d1_open.yaml", "split_name=d1open"]
