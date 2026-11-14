@@ -37,7 +37,10 @@ kaggle_username() {
     return
   fi
   local owner
-  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | sed -n '2p' | cut -d, -f1 | cut -d/ -f1)"
+  # The first `owner/slug` row, not "line 2": the CLI can print an "outdated version"
+  # notice on stdout ahead of the CSV header (seen 2026-11-14), which made line 2 the
+  # header and the owner "ref".
+  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | grep -m1 -E '^[^,/]+/[^,]+,' | cut -d, -f1 | cut -d/ -f1)"
   [ -n "$owner" ] || {
     echo "Cannot tell your Kaggle username; set KAGGLE_USERNAME." >&2
     exit 1
