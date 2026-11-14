@@ -34,6 +34,7 @@ import re
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -249,6 +250,76 @@ def restore_run(src: Path, dest: Path) -> None:
     shutil.copytree(src, dest)
 
 
+def run_eval_entry(
+    entry: dict[str, Any],
+    *,
+    tag: str,
+    code_root: Path,
+    previous: dict[str, Path],
+    resolve_split: Callable[[str], Path],
+    shard_root: Path,
+    std_path: Path,
+    deadline: float,
+) -> dict[str, Any] | None:
+    """One ``{eval: <eval config>, run: <run name>, overrides: [...]}`` queue entry
+    (plan phase 3, T8): ``evaluation.run`` on an already-trained run, which is found
+    in this session's ``results/`` or in any mounted previous output (a slim
+    checkpoint dataset works: only ``best.pt``, ``config_resolved.yaml``,
+    ``label_space.json``, ``calibration.json`` and ``state.json`` are read). Output
+    goes to ``<out_root>/<run>/eval/<split>/``, never into the run directory itself,
+    so it cannot be mistaken for (or block the restore of) a training run.
+
+    Returns ``None`` when too little time is left to start, so the caller stops the
+    queue exactly as it does for training."""
+    from adl_etc.evaluation.run import main as evaluate
+    from adl_etc.utils.config import load_config
+
+    run_name = str(entry["run"])
+    cfg_path = code_root / str(entry["eval"])
+    extra = [str(o) for o in entry.get("overrides", [])]
+    cfg = load_config(cfg_path, overrides=extra)  # a bad override fails here, not mid-pass
+
+    local = Path(str(entry.get("results_root", "results"))) / run_name
+    if (local / "best.pt").is_file():
+        run_dir = local
+    elif run_name in previous and (previous[run_name] / "best.pt").is_file():
+        run_dir = previous[run_name]
+    else:
+        log(f"{tag}: no run directory {run_name!r} with a best.pt here or mounted, skipping")
+        return {"eval": run_name, "status": "missing_run"}
+
+    out_dir = Path(str(entry.get("out_root", "results/robust"))) / run_name
+    done_file = "robustness.json" if cfg.get("perturb") else "report.json"
+    marker = out_dir / "eval" / str(cfg.eval_split) / done_file
+    if marker.is_file():
+        log(f"{tag}: already evaluated, skipping")
+        return {"eval": run_name, "status": "already_finished", "out": str(out_dir)}
+
+    remaining = deadline - time.monotonic()
+    if remaining < QUEUE_STOP_MARGIN_SECONDS:
+        log(f"{tag}: only {remaining / 60:.0f} min left in the session, stopping the queue")
+        return None
+
+    log(f"{tag}: evaluating {run_dir} ({remaining / 3600:.2f} h left)")
+    t0 = time.monotonic()
+    evaluate(
+        [
+            "--config",
+            str(cfg_path),
+            "--override",
+            *extra,
+            f"run_dir={run_dir.as_posix()}",
+            f"out_dir={out_dir.as_posix()}",
+            f"split={resolve_split(str(cfg.split))}",
+            f"data_root={shard_root}",
+            f"standardizer={std_path}",
+        ]
+    )
+    minutes = (time.monotonic() - t0) / 60
+    log(f"{tag}: finished in {minutes:.1f} min -> {marker}")
+    return {"eval": run_name, "status": "finished", "run_dir": str(run_dir), "out": str(out_dir)}
+
+
 def run_queue(deadline: float) -> None:
     # add_code_to_path() must run before any `adl_etc` import: on the real
     # Kaggle image nothing has installed this package, so `sys.path` only
@@ -276,18 +347,37 @@ def run_queue(deadline: float) -> None:
     log(f"previous session: {len(previous)} run director(ies) mounted")
     results: list[dict[str, Any]] = []
 
-    for i, entry in enumerate(entries):
-        cfg_path = code_root / str(entry["config"])
-        # Each entry trains on the split its own config names (d1_open for phase 3,
-        # d1_main for phase 2's closed-set runs) -- never one hard-coded file, which
-        # would silently turn an open-set config into a closed-set run.
-        split_rel = str(load_config(cfg_path, overrides=list(entry.get("overrides", []))).split)
+    def resolve_split(split_rel: str) -> Path:
+        # Each entry uses the split its own config names (d1_open for phase 3, d1_main
+        # for phase 2's closed-set runs) -- never one hard-coded file, which would
+        # silently turn an open-set config into a closed-set run.
         if split_rel not in resolved_splits:
             resolved_splits[split_rel] = resolve_split_file(code_root / split_rel, std_path)
             log(f"resolved split: {split_rel} -> {resolved_splits[split_rel]}")
+        return resolved_splits[split_rel]
+
+    for i, entry in enumerate(entries):
+        if "eval" in entry:
+            outcome = run_eval_entry(
+                entry,
+                tag=f"[{i + 1}/{len(entries)}] eval {entry.get('run')}",
+                code_root=code_root,
+                previous=previous,
+                resolve_split=resolve_split,
+                shard_root=shard_root,
+                std_path=std_path,
+                deadline=deadline,
+            )
+            if outcome is None:  # out of time: stop starting new work, as for training
+                break
+            results.append(outcome)
+            continue
+
+        cfg_path = code_root / str(entry["config"])
+        split_rel = str(load_config(cfg_path, overrides=list(entry.get("overrides", []))).split)
         overrides = [
             *entry.get("overrides", []),
-            f"split={resolved_splits[split_rel]}",
+            f"split={resolve_split(split_rel)}",
             f"data_root={shard_root}",
             f"standardizer={std_path}",
         ]
@@ -312,9 +402,12 @@ def run_queue(deadline: float) -> None:
 
         log(f"{tag}: starting ({remaining / 3600:.2f} h left)")
         result = run_training(cfg, seed=seed, deadline=deadline, code_root=code_root)
+        # best_metric is whatever the objective monitors (val macro-F1 for a baseline,
+        # val AUC_K for prefix fine-tuning, val SSL loss for pretraining), so the log
+        # names it neutrally (Session 1 printed an SSL loss as "best_val_macro_f1").
         log(
             f"{tag}: {result.status} after {result.epochs_done} epoch(s), "
-            f"best_val_macro_f1={result.best_metric:.4f}"
+            f"best monitored metric={result.best_metric:.4f}"
         )
         results.append(
             {

@@ -1,0 +1,34 @@
+# Robustness evaluation on D1's in-distribution test weeks (plan phase 3, T8; spec
+# 007's H5). One config for every model: `run_dir` names the training run, whose
+# config_resolved.yaml rebuilds the model and whose best.pt / label_space.json are
+# loaded. Given on the command line (or by the Kaggle kernel's eval queue entries):
+#   python -m adl_etc.evaluation.run --config configs/eval/d1_open_robust.yaml \
+#     --override run_dir=results/<run> out_dir=results/<run>
+#
+# Every model gets the same capped 250k flows (seed 0) and the same damaged copies
+# of them (each condition's draw depends only on seed and name), so the comparison
+# between models is paired.
+split: configs/splits/d1_open.yaml
+eval_split: test_id
+data_root: results/kaggle-full/shards
+standardizer: results/standardizer.json
+
+run_dir: null
+checkpoint: null      # default: <run_dir>/best.pt
+label_space: null     # default: <run_dir>/label_space.json
+out_dir: null         # required
+
+seed: 0
+device: cpu
+eval_cap: 250000      # the default cap, declared so a quick check can override it
+save_arrays: false    # reports only; a PAT pass's logits.npy is ~2.25 GB
+
+# spec 003's augmentations as damage: drop at the plan's three rates, adjacent
+# swaps at spec 003's default rate, IPT jitter at spec 003's default strength
+# (twice the fine-tuning augmentation's 0.1, so not a condition any model trained on).
+perturb:
+  - {name: drop_05, kind: drop, value: 0.05}
+  - {name: drop_10, kind: drop, value: 0.10}
+  - {name: drop_20, kind: drop, value: 0.20}
+  - {name: reorder_05, kind: reorder, value: 0.05}
+  - {name: ipt_jitter_20, kind: ipt_jitter, value: 0.2}

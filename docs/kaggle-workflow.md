@@ -110,14 +110,52 @@ to mount the previous session's output:
    kernel's own slug, `parthchallawar/adl-encrypted-traffic-train`, to
    `kernel_sources` in `kernel/kernel-metadata.json`. `kernel_sources` mounts a
    kernel's *last successful* version, so this works whenever the previous
-   session ended cleanly (a time-guard pause does). Whether Kaggle accepts a
-   kernel listing itself is checked on the first real push; not yet verified.
+   session ended cleanly (a time-guard pause does). **Verified 2026-11-14**
+   (phase 3, Session 2, kernel v15): Kaggle accepts a kernel listing itself; the
+   mount appears at `/kaggle/input/adl-encrypted-traffic-train/results/`, all 8
+   of Session 1's run directories were found, and the SSL run was restored and
+   skipped. Only the *latest* version is mounted, so runs spread over several
+   sessions need option 2.
 2. **A dataset made from it** (fallback, needs nothing new from Kaggle):
    `pull-results` the previous session, version the pulled `results/` folder as
    a small private dataset, and add that dataset to `dataset_sources`.
 
 Tested locally (`tests/test_kernel_smoke.py`): a finished run restored and
 skipped, a paused run restored and continued to the end, a damaged one refused.
+
+## Evaluation-only entries (plan phase 3, T8)
+
+A queue entry can evaluate an already-trained run instead of training one:
+
+```yaml
+- eval: configs/eval/d1_open_robust.yaml
+  run: ft-pat-scratch-d1open-s0
+  overrides: ["device=cuda"]
+```
+
+The run directory is looked up in this session's `results/`, then in any mounted
+input (anything holding a `state.json` and a `best.pt`). Output goes to
+`results/robust/<run>/eval/<split>/`; an entry whose `robustness.json` (or
+`report.json`, for a config without `perturb:`) already exists is skipped. To
+make runs from several sessions available at once, ship them as a slim dataset
+and add `parthchallawar/adl-encrypted-traffic-checkpoints` to `dataset_sources`:
+
+```
+./scripts/kaggle_sync.sh push-checkpoints results/<pulled>/<run> [...]
+```
+
+It copies only `best.pt`, `config_resolved.yaml`, `label_space.json`,
+`calibration.json` and `state.json` (~15 MB a run), never `logits.npy`.
+
+**Pulling output.** Kaggle's output download is slow (~0.6 MB/s measured
+2026-11-14) and drops connections on large files (`IncompleteRead`), and a
+training run's `eval/val/logits.npy` is ~2.25 GB. Pull the small files first
+and large ones only when needed: `kaggle kernels output <user>/<slug> -p <dir>
+--file-pattern '\.(json|jsonl|yaml|log|png)$' --page-size 200`, then
+`'best\.pt$'`, retrying on `IncompleteRead`. While a newer version of the
+kernel is running, its earlier versions' output cannot be listed or pulled.
+`kaggle kernels logs <slug>` prints nothing for a running session; add `-f`
+to stream it.
 
 ## Results: Kaggle → results/
 
