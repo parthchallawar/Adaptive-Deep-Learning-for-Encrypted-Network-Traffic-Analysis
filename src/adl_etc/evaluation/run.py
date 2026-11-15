@@ -21,6 +21,8 @@ Optional keys (plan phase 3, T8):
   read-only mount).
 - ``save_arrays`` (default true): false skips ``logits.npy`` and friends (~2.25 GB
   per 250k-flow PAT pass) and keeps only reports, summaries and figures.
+  ``predictions.npz`` (:mod:`.bootstrap`, ~15 MB) is written either way: it is
+  what a paired bootstrap between two models needs.
 - ``perturb``: a list of ``{name, kind, value}`` (:mod:`.robustness`). After the
   clean pass, each condition damages the same flows with its own fixed-seed draw,
   re-runs the model, and writes ``perturb/<name>/report.json``; ``robustness.json``
@@ -48,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from adl_etc.data.features import Standardizer
     from adl_etc.evaluation.artifact import DEFAULT_EVAL_CAP, EvalArrays, subsample_for_eval
+    from adl_etc.evaluation.bootstrap import PREDICTIONS_FILE, Predictions
     from adl_etc.evaluation.calibration import Calibration, ece_per_k
     from adl_etc.evaluation.dense_logits import from_causal
     from adl_etc.evaluation.plotstyle import (
@@ -146,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         ea.save(out_dir)
     else:
         out_dir.mkdir(parents=True, exist_ok=True)
+    # Always (~15 MB at 250k flows): what a paired comparison between two models needs.
+    Predictions.from_dense(dense, labels_model, sub.ppi_len, idx).save(out_dir / PREDICTIONS_FILE)
     label_space.save(out_dir / "label_space.json")
     if calibration is not None and safe is not None:
         if save_arrays:

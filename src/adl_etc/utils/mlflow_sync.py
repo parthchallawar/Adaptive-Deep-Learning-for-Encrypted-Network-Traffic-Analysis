@@ -292,10 +292,154 @@ def sync_tree(
     return out
 
 
+# --- evaluation reports (plan phase 3, T8) ---------------------------------------------------
+#
+# A run's training metrics come from its run directory; its evaluation reports do not:
+# ``eval/val/report.json`` sits beside them, and a robustness pass writes
+# ``<out_root>/<run name>/eval/<split>/`` (``report.json``, ``robustness.json``,
+# ``predictions.npz``) outside any run directory (kernel ``run_eval_entry``). Each such
+# directory is attached to the one finished MLflow run of that name: scalars become
+# metrics named ``<split>.<metric>`` (``test_id.acc_k5``, ``test_id.drop_10.auc_k``)
+# and the files become artifacts under ``eval/<split>/``. A tag holds a hash of what
+# was attached, so attaching the same evaluation again does nothing, and attaching a
+# *different* one under the same split is refused instead of silently mixing two.
+
+EVAL_REPORT = "report.json"
+EVAL_ROBUSTNESS = "robustness.json"
+EVAL_FILES = (EVAL_REPORT, EVAL_ROBUSTNESS, "predictions.npz", "calibration_report.json")
+
+
+@dataclass(frozen=True)
+class AttachResult:
+    eval_dir: Path
+    run_name: str
+    split: str
+    run_id: str
+    attached: bool  # False: this exact evaluation was already attached
+    metrics_logged: int
+
+
+def find_eval_dirs(root: str | Path) -> list[tuple[str, str, Path]]:
+    """``(run name, split, directory)`` for every ``<run name>/eval/<split>/report.json``
+    under ``root`` whose ``<run name>`` is one of ours (``parse_run_name``). A
+    robustness pass's per-condition reports (``.../perturb/<name>/report.json``) are
+    summarised by its ``robustness.json`` and not attached on their own."""
+    from adl_etc.utils.runinfo import parse_run_name
+
+    found = []
+    for report in Path(root).rglob(EVAL_REPORT):
+        split_dir = report.parent
+        if split_dir.parent.name != "eval":
+            continue
+        name = split_dir.parent.parent.name
+        try:
+            parse_run_name(name)
+        except ValueError:
+            continue
+        found.append((name, split_dir.name, split_dir))
+    return sorted(found)
+
+
+def eval_metrics(split: str, report: dict[str, Any], robustness: dict[str, Any] | None) -> dict:
+    """The scalars of one evaluation, as ``{"<split>.<metric>": value}``."""
+    out: dict[str, float] = {}
+    for k, v in report["acc_at_k"].items():
+        out[f"{split}.acc_k{k}"] = float(v)
+    for k, v in (report.get("auroc_at_k") or {}).items():
+        if v is not None:
+            out[f"{split}.auroc_k{k}"] = float(v)
+    for name in ("auc_k", "macro_f1", "balanced_accuracy", "k95", "n_flows", "n_unknown"):
+        out[f"{split}.{name}"] = float(report[name])
+    rel = report.get("reliability") or {}
+    if rel.get("ece") is not None:
+        out[f"{split}.ece_k{rel['k']}"] = float(rel["ece"])
+    for cond, row in ((robustness or {}).get("conditions") or {}).items():
+        if cond == "clean":
+            continue  # identical to the report's own values above
+        out[f"{split}.{cond}.auc_k"] = float(row["auc_k"])
+        out[f"{split}.{cond}.macro_f1"] = float(row["macro_f1"])
+        for k, v in row["acc_at_k"].items():
+            out[f"{split}.{cond}.acc_k{k}"] = float(v)
+    return out
+
+
+def attach_eval(
+    eval_dir: str | Path,
+    *,
+    run_name: str,
+    split: str,
+    tracking_uri: str,
+    experiment: str = DEFAULT_EXPERIMENT,
+) -> AttachResult:
+    """Attach one evaluation directory to the finished MLflow run named ``run_name``
+    (see the section comment above). Safe to repeat."""
+    import time
+
+    from mlflow import MlflowClient
+    from mlflow.entities import Metric, RunTag
+
+    ed = Path(eval_dir)
+    report = json.loads((ed / EVAL_REPORT).read_text(encoding="utf-8"))
+    rob_path = ed / EVAL_ROBUSTNESS
+    robustness = json.loads(rob_path.read_text(encoding="utf-8")) if rob_path.is_file() else None
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    exp = client.get_experiment_by_name(experiment)
+    if exp is None:
+        raise SyncError(f"no MLflow experiment {experiment!r}; import the run directories first")
+    candidates = [
+        r
+        for r in client.search_runs(
+            [exp.experiment_id], filter_string=f"attributes.run_name = '{run_name}'"
+        )
+        if r.data.tags.get(TAG_STATUS) == FINISHED
+    ]
+    if not candidates:
+        raise SyncError(
+            f"{ed}: no finished MLflow run named {run_name!r}; import its run directory first"
+        )
+    if len(candidates) > 1:
+        hashes = sorted(r.data.tags.get("config_hash", "")[:12] for r in candidates)
+        raise SyncError(f"{ed}: {len(candidates)} finished MLflow runs named {run_name!r} {hashes}")
+    run = candidates[0]
+    run_id = run.info.run_id
+
+    digest = stable_hash(
+        {
+            "report": report.get("hash", ""),
+            "robustness": None if robustness is None else robustness.get("report_hashes"),
+        }
+    )
+    tag = f"adl.eval.{split}.hash"
+    have = run.data.tags.get(tag)
+    if have == digest:
+        return AttachResult(ed, run_name, split, run_id, attached=False, metrics_logged=0)
+    if have is not None:
+        raise SyncError(
+            f"{ed}: run {run_name!r} already has a different {split!r} evaluation attached "
+            f"({have[:12]} vs {digest[:12]}); refusing to mix two evaluations"
+        )
+
+    now = int(time.time() * 1000)
+    values = eval_metrics(split, report, robustness)
+    metrics = [Metric(k, v, now, 0) for k, v in sorted(values.items())]
+    for i in range(0, len(metrics), _METRIC_BATCH):
+        client.log_batch(run_id, metrics=metrics[i : i + _METRIC_BATCH])
+    for name in EVAL_FILES:
+        if (ed / name).is_file():
+            client.log_artifact(run_id, str(ed / name), f"eval/{split}")
+    client.log_batch(run_id, tags=[RunTag(tag, digest)])
+    return AttachResult(ed, run_name, split, run_id, attached=True, metrics_logged=len(metrics))
+
+
 __all__ = [
     "DEFAULT_EXPERIMENT",
+    "AttachResult",
     "SyncError",
     "SyncResult",
+    "attach_eval",
+    "eval_metrics",
+    "find_eval_dirs",
     "find_run_dirs",
     "local_store",
     "run_key",

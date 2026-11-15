@@ -222,3 +222,198 @@ def test_main_refuses_a_dirty_run_with_a_nonzero_exit(
 def test_main_with_no_runs_reports_and_exits_nonzero(tmp_path: Path) -> None:
     rc = make_tables.main(["--results", str(tmp_path / "empty-results")])
     assert rc != 0
+
+
+# --- phase 3: evaluations attached to runs, the per-K table, the bootstrap ------------------
+
+import json  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from adl_etc.evaluation.bootstrap import Predictions  # noqa: E402
+from adl_etc.utils.mlflow_sync import SyncError, attach_eval, find_eval_dirs  # noqa: E402
+
+mlflow_import = importlib.import_module("mlflow_import")
+
+
+def write_eval(
+    ed: Path,
+    *,
+    auc: float,
+    acc5: float,
+    h: str,
+    drop10_auc: float | None = None,
+    preds: Predictions | None = None,
+) -> Path:
+    ed.mkdir(parents=True, exist_ok=True)
+    report = {
+        "split": ed.name,
+        "acc_at_k": {"1": 0.1, "3": 0.4, "5": acc5, "8": 0.8, "30": 0.9},
+        "auroc_at_k": {"5": 0.85, "30": 0.9},
+        "auc_k": auc,
+        "macro_f1": 0.8,
+        "balanced_accuracy": 0.8,
+        "k95": 8,
+        "n_flows": 1000,
+        "n_unknown": 100,
+        "reliability": {"k": 30, "ece": 0.03},
+        "hash": h,
+    }
+    (ed / "report.json").write_text(json.dumps(report), encoding="utf-8")
+    if drop10_auc is not None:
+        rob = {
+            "conditions": {
+                "clean": {"auc_k": auc, "macro_f1": 0.8, "acc_at_k": {"8": 0.8}},
+                "drop_10": {"auc_k": drop10_auc, "macro_f1": 0.7, "acc_at_k": {"8": 0.7}},
+            },
+            "report_hashes": {"clean": h, "drop_10": h + "-d"},
+        }
+        (ed / "robustness.json").write_text(json.dumps(rob), encoding="utf-8")
+        # a per-condition report, which must not be attached on its own
+        write_eval(ed / "perturb" / "drop_10", auc=drop10_auc, acc5=acc5, h=h + "-d")
+    if preds is not None:
+        preds.save(ed / "predictions.npz")
+    return ed
+
+
+def _preds(p_right: float, seed: int, n: int = 400) -> Predictions:
+    rng = np.random.default_rng(0)  # same flows and labels for every model
+    labels = rng.integers(0, 4, n)
+    labels[:40] = -1
+    ks = np.arange(1, 31)
+    right = np.random.default_rng(seed).random((n, ks.size)) < p_right
+    preds = np.where(right, labels[:, None], (labels[:, None] + 1) % 4).astype(np.int16)
+    return Predictions(np.arange(n), labels, rng.integers(1, 31, n), ks, preds)
+
+
+def _pat_run(work: Path, variant: str, seed: int) -> Path:
+    return make_run(
+        work, stage="ft", model="pat", variant=variant, split="d1open", seed=seed,
+        best_val_macro_f1=0.8,
+    )  # fmt: skip
+
+
+def test_attach_eval_adds_split_metrics_once_and_refuses_a_different_one(
+    store: Store, tmp_path: Path
+) -> None:
+    rd = _pat_run(tmp_path, "tuned", 0)
+    sync(store, rd)
+    ed = write_eval(rd / "eval" / "val", auc=0.83, acc5=0.78, h="aaa")
+
+    first = attach_eval(ed, run_name=rd.name, split="val", tracking_uri=store.uri)
+    assert first.attached and first.metrics_logged > 0
+    m = store.client.get_run(first.run_id).data.metrics
+    assert m["val.auc_k"] == pytest.approx(0.83) and m["val.acc_k5"] == pytest.approx(0.78)
+    assert m["val.ece_k30"] == pytest.approx(0.03) and m["val.auroc_k30"] == pytest.approx(0.9)
+
+    again = attach_eval(ed, run_name=rd.name, split="val", tracking_uri=store.uri)
+    assert not again.attached and again.metrics_logged == 0
+
+    other = write_eval(tmp_path / "other" / rd.name / "eval" / "val", auc=0.5, acc5=0.5, h="bbb")
+    with pytest.raises(SyncError, match="different 'val' evaluation"):
+        attach_eval(other, run_name=rd.name, split="val", tracking_uri=store.uri)
+
+
+def test_attach_eval_needs_the_run_imported_first(store: Store, tmp_path: Path) -> None:
+    sync(store, make_run(tmp_path, seed=0, best_val_macro_f1=0.8))  # creates the experiment
+    name = "ft-pat-x-d1open-s0"
+    ed = write_eval(tmp_path / "robust" / name / "eval" / "test_id", auc=0.8, acc5=0.7, h="c")
+    with pytest.raises(SyncError, match="no finished MLflow run"):
+        attach_eval(ed, run_name=name, split="test_id", tracking_uri=store.uri)
+
+
+def test_find_eval_dirs_skips_per_condition_reports_and_foreign_names(tmp_path: Path) -> None:
+    ed = tmp_path / "robust" / "ft-pat-tuned-d1open-s0" / "eval" / "test_id"
+    write_eval(ed, auc=0.8, acc5=0.7, h="a", drop10_auc=0.77)
+    write_eval(tmp_path / "not-a-run" / "eval" / "val", auc=0.8, acc5=0.7, h="b")
+    found = find_eval_dirs(tmp_path)
+    assert [(n, s) for n, s, _ in found] == [("ft-pat-tuned-d1open-s0", "test_id")]
+
+
+def _phase3_store(store: Store, tmp_path: Path) -> None:
+    """Two seeds each of the tuned scratch/SSL pair, with test_id evaluations
+    (robustness + per-flow predictions) attached, plus one val-only ablation."""
+    for seed in (0, 1):
+        for variant, auc, drop, p in (("tuned", 0.81, 0.78, 0.5), ("ssl_tuned", 0.83, 0.80, 0.6)):
+            rd = _pat_run(tmp_path, variant, seed)
+            sync(store, rd)
+            ed = write_eval(
+                tmp_path / "robust" / rd.name / "eval" / "test_id",
+                auc=auc + seed * 0.01,
+                acc5=0.7,
+                h=f"{variant}{seed}",
+                drop10_auc=drop + seed * 0.01,
+                preds=_preds(p, seed=seed * 10 + len(variant)),
+            )
+            attach_eval(ed, run_name=rd.name, split="test_id", tracking_uri=store.uri)
+    rd = _pat_run(tmp_path, "abl_drop0", 0)
+    sync(store, rd)
+    ed = write_eval(rd / "eval" / "val", auc=0.80, acc5=0.72, h="abl")
+    attach_eval(ed, run_name=rd.name, split="val", tracking_uri=store.uri)
+
+
+def test_phase3_table_aggregates_seeds_robustness_and_bootstrap(
+    store: Store, tmp_path: Path
+) -> None:
+    _phase3_store(store, tmp_path)
+    runs = make_tables.fetch_runs(store.uri, "adl-etc")
+    groups, _ = make_tables.checked_groups(runs, allow_dirty=False)
+    p3 = make_tables.build_phase3(groups, store.client, tmp_path / "dl")
+
+    test = {r["group"]: r for r in p3["test"]}
+    assert list(test) == ["ft-pat-ssl_tuned-d1open", "ft-pat-tuned-d1open"]  # display order
+    ssl = test["ft-pat-ssl_tuned-d1open"]
+    assert ssl["seeds"] == [0, 1]
+    assert ssl["auc_k"][0] == pytest.approx(0.835) and ssl["auc_k"][2] == 2
+    assert ssl["robust"]["drop_10"][0] == pytest.approx(-0.03)  # per-seed delta, then mean
+    assert [r["group"] for r in p3["val"]] == ["ft-pat-abl_drop0-d1open"]
+
+    boot = [b for b in p3["bootstrap"] if b["split"] is not None]
+    pair = ("tuned", "ssl_tuned")
+    assert [(b["pair"], b["seed"]) for b in boot] == [(pair, 0), (pair, 1)]
+    assert all(b["auc_k"]["diff"] > 0 for b in boot)  # the simulated SSL model is better
+    # the other pairs have no runs at all here, so they get no row
+    assert all(b["split"] is not None for b in p3["bootstrap"])
+
+    md = make_tables.render_phase3_markdown(p3)
+    assert "PAT tuned, SSL init" in md and "0.835 ± 0.007" in md
+    for block in md.split("\n\n"):  # every table's separator matches its header
+        rows = [ln for ln in block.splitlines() if ln.startswith("|")]
+        if len(rows) >= 2:
+            assert rows[0].count("|") == rows[1].count("|"), rows[0]
+    assert r"\begin{tabular}" in make_tables.render_phase3_latex(p3)
+
+
+def test_a_pair_without_predictions_is_reported_unavailable(store: Store, tmp_path: Path) -> None:
+    for variant in ("scratch", "ssl"):
+        rd = _pat_run(tmp_path, variant, 0)
+        sync(store, rd)
+        ed = write_eval(rd / "eval" / "val", auc=0.8, acc5=0.7, h=variant)
+        attach_eval(ed, run_name=rd.name, split="val", tracking_uri=store.uri)
+    runs = make_tables.fetch_runs(store.uri, "adl-etc")
+    groups, _ = make_tables.checked_groups(runs, allow_dirty=False)
+    p3 = make_tables.build_phase3(groups, store.client, tmp_path / "dl")
+    assert p3["bootstrap"] == [{"pair": ("scratch", "ssl"), "split": None, "seed": None}]
+    assert "no per-flow predictions" in make_tables.render_phase3_markdown(p3)
+
+
+def test_import_script_attaches_evaluations_across_sources(tmp_path: Path) -> None:
+    src_a, src_b = tmp_path / "s1", tmp_path / "s2"
+    src_a.mkdir()
+    rd = _pat_run(src_a, "tuned", 0)
+    write_eval(rd / "eval" / "val", auc=0.8, acc5=0.7, h="v")
+    ed = src_b / "robust" / rd.name / "eval" / "test_id"
+    write_eval(ed, auc=0.79, acc5=0.7, h="t", drop10_auc=0.76)
+    results = tmp_path / "results"
+
+    argv = ["--src", str(src_a), str(src_b), "--results", str(results)]
+    assert mlflow_import.main(argv) == 0
+    assert mlflow_import.main(argv) == 0  # idempotent: the second pass attaches nothing new
+
+    from mlflow import MlflowClient
+
+    uri, _ = local_store(results)
+    client = MlflowClient(tracking_uri=uri)
+    run = client.search_runs([client.get_experiment_by_name("adl-etc").experiment_id])[0]
+    assert run.data.metrics["val.auc_k"] == pytest.approx(0.8)
+    assert run.data.metrics["test_id.drop_10.auc_k"] == pytest.approx(0.76)

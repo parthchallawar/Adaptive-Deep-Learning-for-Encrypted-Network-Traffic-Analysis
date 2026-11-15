@@ -32,9 +32,9 @@ python scripts/export_pcap.py ...        # PCAP -> shards (configs/data/pcap.yam
 python scripts/export_raw_csv.py --files data/raw/cesnet-tls-year22/flows-*.csv.xz --out-root data/processed --dataset cesnet-tls-year22   # --verify checks against stats-*.json instead of exporting; --sample-rate 0.03 [--sample-seed N] keeps a uniform seeded sample (recorded in meta.json); --check-stats verifies each day against its stats file while exporting
 python scripts/make_unknown_split.py     # one-off open-set class draw for configs/splits/
 ./scripts/kaggle_sync.sh check|push-dataset|version-dataset|push-code|push-kernel [dir]|pull-results   # see docs/kaggle-workflow.md; `check` fails (correctly) when private endpoints answer "Authentication required", even though public downloads still work
-python scripts/mlflow_import.py --src <pulled-run-dirs> [--dry-run]   # run dirs -> results/mlflow.db (idempotent)
+python scripts/mlflow_import.py --src <pulled-dir> [<pulled-dir> ...] [--dry-run]   # run dirs -> results/mlflow.db, then attaches every <run>/eval/<split>/ (report, robustness, predictions) to its run (idempotent)
 mlflow ui --backend-store-uri sqlite:///results/mlflow.db            # browse; on Windows, killing this leaves uvicorn workers holding the port
-python scripts/make_tables.py [--allow-dirty]            # MLflow -> results/summaries/main_table.{md,tex}; refuses dirty-tree and config-drift runs
+python scripts/make_tables.py [--allow-dirty]            # MLflow -> results/summaries/main_table.{md,tex} and phase3_table.{md,tex} (per-K, robustness, paired bootstrap); refuses dirty-tree and config-drift runs
 ```
 
 ## Architecture (phase 1)

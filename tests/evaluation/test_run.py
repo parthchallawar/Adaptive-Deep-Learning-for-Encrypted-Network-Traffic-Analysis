@@ -167,6 +167,10 @@ def test_run_with_perturb_writes_a_report_per_condition_and_a_summary(tmp_path):
     eval_dir = out_dir / "eval" / "test"
     clean = Report.load(eval_dir / "report.json")
     assert not (eval_dir / A.LOGITS_FILE).exists(), "save_arrays: false must skip logits"
+    from adl_etc.evaluation.bootstrap import PREDICTIONS_FILE, Predictions
+
+    preds = Predictions.load(eval_dir / PREDICTIONS_FILE)  # written either way
+    assert preds.preds.shape == (clean.n_flows, len(clean.ks))
     assert (eval_dir / "robustness_acc_vs_k.png").exists()
     summary = json.loads((eval_dir / "robustness.json").read_text())
     assert list(summary["conditions"]) == ["clean", "drop_50", "jitter"]
