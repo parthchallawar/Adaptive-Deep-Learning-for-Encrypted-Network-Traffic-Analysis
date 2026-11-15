@@ -1,0 +1,19 @@
+# The recommended prefix fine-tuning recipe (plan phase 3, 2026-11-15): ft_pat_d1.yaml
+# with dropout and label smoothing removed, 8 epochs. Session 2's single-change
+# ablations each gained ~1 point of AUC_K from removing one of them (5.4M training
+# flows need neither), and Session 3's tuned pair (kernel v16) beat B3 at every K,
+# where the default recipe had lost to it early. ft_pat_d1.yaml stays as it is: it is
+# the reference every ablation is defined against, and editing it would give new runs
+# the old runs' names (`ft-pat-scratch-...`), which the queue would then skip as
+# already finished. The variant here is the name Session 3's seed-0 run already has.
+defaults:
+  - ft_pat_d1.yaml
+
+model:
+  dropout: 0.0
+
+train:
+  epochs: 8
+  label_smoothing: 0.0
+
+variant: tuned

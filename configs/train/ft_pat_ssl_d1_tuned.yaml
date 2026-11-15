@@ -1,0 +1,14 @@
+# The recommended SSL-initialised recipe: ft_pat_ssl_d1.yaml (lower peak LR, layer-wise
+# LR decay, `init_from` required) with ft_pat_d1_tuned.yaml's changes (dropout 0,
+# label smoothing 0, 8 epochs). See ft_pat_d1_tuned.yaml for why both exist.
+defaults:
+  - ft_pat_ssl_d1.yaml
+
+model:
+  dropout: 0.0
+
+train:
+  epochs: 8
+  label_smoothing: 0.0
+
+variant: ssl_tuned

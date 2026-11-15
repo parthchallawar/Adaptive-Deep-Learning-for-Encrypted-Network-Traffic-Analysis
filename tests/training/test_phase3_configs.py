@@ -166,9 +166,42 @@ def test_the_committed_kaggle_queue_is_valid_open_set_and_distinct() -> None:
     assert isinstance(queue, list) and queue
 
     names = []
+    evals = []
     for entry in queue:
+        if "eval" in entry:  # plan phase 3 T8: evaluates a run, trains nothing
+            cfg = load_config(repo / entry["eval"], list(entry.get("overrides", [])))
+            assert cfg.split == "configs/splits/d1_open.yaml" and cfg.device == "cuda"
+            assert set(entry) <= {"eval", "run", "overrides", "results_root", "out_root"}
+            evals.append(str(entry["run"]))
+            continue
         cfg = load_config(repo / entry["config"], list(entry.get("overrides", [])))
         assert cfg.split == "configs/splits/d1_open.yaml" and cfg.device == "cuda"
         names.append(make_run_name(cfg.stage, cfg.model.name, cfg.variant, cfg.split_name,
                                    int(cfg.seed)))  # fmt: skip
     assert len(set(names)) == len(names)
+    assert len(set(evals)) == len(evals), "the same run evaluated twice"
+
+
+@pytest.mark.parametrize(
+    "tuned, base, variant",
+    [
+        ("ft_pat_d1_tuned.yaml", "ft_pat_d1.yaml", "tuned"),
+        ("ft_pat_ssl_d1_tuned.yaml", "ft_pat_ssl_d1.yaml", "ssl_tuned"),
+    ],
+)
+def test_the_tuned_configs_are_exactly_session_3s_runs(tuned: str, base: str, variant: str) -> None:
+    """The recommended recipe is the one phase 3's Session 3 (kernel v16) trained as
+    overrides. Same resolved config hash and run name, so its seed-0 runs are these
+    configs' seed-0 runs and later seeds join the same family."""
+    from adl_etc.utils.config import config_hash
+
+    common = ["seed=0", "device=cuda", "init_from=x.pt"] if "ssl" in tuned else ["seed=0"]
+    new = load_config(TRAIN / tuned, common)
+    old = load_config(
+        TRAIN / base,
+        [*common, "train.epochs=8", f"variant={variant}", "model.dropout=0.0",
+         "train.label_smoothing=0.0"],  # fmt: skip
+    )
+    assert config_hash(new) == config_hash(old)
+    assert new.variant == variant and new.model.dropout == 0.0
+    assert new.train.label_smoothing == 0.0 and new.train.epochs == 8
