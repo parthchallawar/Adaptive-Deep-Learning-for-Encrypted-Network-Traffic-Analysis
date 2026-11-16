@@ -1,6 +1,6 @@
 # Spec 006: Prefix-Aware Transformer Backbone (PAT)
 
-- **Status:** draft, revised 2026-10-03 before build (see [Revisions](#revisions)). Not implemented. Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), task T4.
+- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **model built and tested locally** (`adl_etc.models.pat`: `PAT`, `PATStream`; 885,821 parameters at the defaults). **Trained on D1 (`d1_open`), one seed, 2026-11-13/15**: B5 and the prefix-trained variants; results in [docs/results-phase-3.md](../docs/results-phase-3.md). Dropout 0.1 (this spec's default) cost ~1 point of AUC_K in the ablation; the recommended training configs set it to 0, the model default is unchanged. Streaming latency is spec 013's.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 8 of 18
@@ -46,7 +46,7 @@ z_k = LayerNorm_final(h^L_k)                     # prefix representation after k
 | `proj` | 128-d L2-normalised projection of z_k | contrastive SSL (007), Mahalanobis unknown score (010) |
 
 - **`next` widths come from `features.py`'s vocabulary constants**, never literals. Targets are the next packet's token ids, with `ignore_index = PAD_INDEX` (0), so no padded position is ever a target.
-- **`end`** is a binary logit per position. Target 1 at k = `ppi_len` when `ppi_len < 30` (the flow had no more payload packets), 0 at k < `ppi_len`, and ignored at k = `ppi_len` = 30 (truncated at the cap, so whether the flow continued is unknown). Measured on the D1 probe day, 83% of flows end before packet 30, so the target is real. It tells the stopping policy when waiting cannot bring more evidence.
+- **`end`** is a binary logit per position. Target 1 at k = `ppi_len` when `ppi_len < 30` (the flow had no more payload packets), 0 at k < `ppi_len`, and ignored at k = `ppi_len` = 30 (truncated at the cap, so whether the flow continued is unknown). Measured on D1's real training weeks, 90% of flows end before packet 30 (83% on the probe day), so the target is real. It tells the stopping policy when waiting cannot bring more evidence.
 - `safe` receives `[z_k, entropy(cls_k), margin(cls_k), entropy(next_k), p_end_k, k/30]` so that it can learn the value of waiting from the classifier's uncertainty, the predictor's uncertainty and the chance that no more packets are coming.
 
 ### Streaming inference
@@ -58,7 +58,7 @@ Exactness test: `stream(x)[k] == full_forward(x)[k]` for all k, within fp32 tole
 ## Inputs and outputs
 
 - Inputs: `tokens [B,30,4] int64`, `cont [B,30,4]` (standardised continuous view; omitted only when the side channel is off), `mask [B,30]`, `ppi_len`.
-- Outputs per position: `cls [B,31,C]`, `safe [B,31]`, `next {size:[B,31,65], ipt:[B,31,33], dir:[B,31,3], end:[B,31]}`, `proj [B,31,128]`. Position 0 is `[BOS]`.
+- Outputs, as a dict, for packet positions 1..30 only, so index `k − 1` is "after k packets" exactly as `mask`, every loss, every metric and `DenseLogits` already index: `cls [B,30,C]`, `safe [B,30]`, `next_size [B,30,65]`, `next_ipt [B,30,33]`, `next_dir [B,30,3]`, `next_end [B,30]`, `proj [B,30,128]`, `z [B,30,d_model]`. The `[BOS]` position's outputs come back separately as `cls0 [B,C]` and `z0 [B,d_model]` (the prior, for spec 011). Built as `adl_etc.models.pat.PAT`; `PATStream` returns the same heads one position at a time.
 
 ## Cost model (used by the controller, spec 011)
 
@@ -68,7 +68,7 @@ Exactness test: `stream(x)[k] == full_forward(x)[k]` for all k, within fp32 tole
 
 - Flows with `ppi_len < k`: positions beyond `ppi_len` are masked; outputs there are ignored (mask propagates to losses and metrics).
 - Padding token bins (0) must never receive gradient through `next` targets: targets at padded positions are ignored (`ignore_index`).
-- Truncated flows (`ppi_len` = 30, 16.7% of D1 probe flows): the `end` target at position 30 is ignored, never set to 1.
+- Truncated flows (`ppi_len` = 30: 10.0% of D1's real training flows): the `end` target at position 30 is ignored, never set to 1.
 - fp16 overflow in attention logits: use PyTorch SDPA with fp32 softmax (`torch.nn.functional.scaled_dot_product_attention`) under autocast.
 
 ## Performance considerations

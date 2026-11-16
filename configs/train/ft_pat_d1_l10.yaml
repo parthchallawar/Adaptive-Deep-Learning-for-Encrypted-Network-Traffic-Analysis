@@ -1,0 +1,10 @@
+# Spec 008's 10% label regime (plan phase 3, T6; F11): batch 1024, so 15 epochs of
+# ~542k labelled flows is ~7,950 optimizer steps, above the 3,000-step floor.
+defaults:
+  - ft_pat_d1.yaml
+
+train:
+  batch_size: 1024
+
+label_fraction: 0.1
+variant: scratch_l10

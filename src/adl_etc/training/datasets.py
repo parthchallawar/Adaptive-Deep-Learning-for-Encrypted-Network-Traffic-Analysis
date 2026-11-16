@@ -176,13 +176,18 @@ class FlowBatches:
         return np.bincount(self.y[self.y >= 0], minlength=self.label_space.n_classes)
 
     def batch(self, idx: np.ndarray) -> dict[str, np.ndarray]:
-        ppi = self.data.ppi[idx]
-        ppi_len = self.data.ppi_len[idx]
+        return self.encode(self.data.ppi[idx], self.data.ppi_len[idx], self.y[idx])
+
+    def encode(
+        self, ppi: np.ndarray, ppi_len: np.ndarray, y: np.ndarray
+    ) -> dict[str, np.ndarray]:
+        """Model inputs for raw PPI rows (``batch`` passes the stored ones; an
+        augmenting subclass passes altered ones)."""
         mask = F.padding_mask(ppi_len)
         out: dict[str, np.ndarray] = {
             "mask": mask,
             "ppi_len": ppi_len.astype(np.int64),
-            "y": self.y[idx],
+            "y": y,
         }
         if "continuous" in self.views:
             assert self.standardizer is not None

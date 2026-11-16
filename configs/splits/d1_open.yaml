@@ -1,0 +1,115 @@
+# d1_open.yaml: d1_main.yaml plus the open-set block at the end.
+# D1 CESNET-TLS-Year22 main split (spec 004).
+#
+# Periods are the mirror's own WEEK-2022-NN folder names (plan T5), each an
+# independently exported shard set under data/processed/cesnet-tls-year22/.
+# Weeks 1-10 are excluded (the documented week-10 exporter artefact, spec 004).
+#
+# Exported for real 2026-09-22 (plan T3, kernel/export-d1, 3% uniform sample):
+# 12,521,630 flows, 180 classes, verified against every day's stats-*.json.
+# Locally, load_split needs the shards under data/processed/cesnet-tls-year22/
+# (not shipped in this repo -- pull them from the Kaggle kernel's output,
+# parthchallawar/adl-export-d1, or mount that output on a training kernel).
+# The standardizer is fit on weeks 11-26 only; results/standardizer.json is a
+# local artefact (gitignored), not committed -- re-fit with
+# Standardizer.fit_many if it's missing.
+dataset: cesnet-tls-year22
+temporal: true
+
+splits:
+  train:
+    periods:
+      - WEEK-2022-11
+      - WEEK-2022-12
+      - WEEK-2022-13
+      - WEEK-2022-14
+      - WEEK-2022-15
+      - WEEK-2022-16
+      - WEEK-2022-17
+      - WEEK-2022-18
+      - WEEK-2022-19
+      - WEEK-2022-20
+      - WEEK-2022-21
+      - WEEK-2022-22
+      - WEEK-2022-23
+      - WEEK-2022-24
+      - WEEK-2022-25
+      - WEEK-2022-26
+    standardizer: results/standardizer.json
+  val:
+    periods:
+      - WEEK-2022-27
+      - WEEK-2022-28
+      - WEEK-2022-29
+      - WEEK-2022-30
+    standardizer: results/standardizer.json
+  test_id:
+    periods:
+      - WEEK-2022-31
+      - WEEK-2022-32
+      - WEEK-2022-33
+      - WEEK-2022-34
+    standardizer: results/standardizer.json
+  test_drift:
+    periods:
+      - WEEK-2022-35
+      - WEEK-2022-36
+      - WEEK-2022-37
+      - WEEK-2022-38
+      - WEEK-2022-39
+      - WEEK-2022-40
+      - WEEK-2022-41
+      - WEEK-2022-42
+      - WEEK-2022-43
+      - WEEK-2022-44
+      - WEEK-2022-45
+      - WEEK-2022-46
+      - WEEK-2022-47
+      - WEEK-2022-48
+      - WEEK-2022-49
+      - WEEK-2022-50
+      - WEEK-2022-51
+      - WEEK-2022-52
+    standardizer: results/standardizer.json
+
+# --- open set (spec 004; plan phase 3, T1a) -------------------------------
+# GENERATED -- do not edit by hand; regenerate with:
+#   python scripts/make_unknown_split.py --dataset cesnet-tls-year22 --test-period WEEK-2022-31 WEEK-2022-32 WEEK-2022-33 WEEK-2022-34 --seed 42 --base-split configs/splits/d1_main.yaml --split-out configs/splits/d1_open.yaml
+# 150 known / 30 unknown classes, seed 42, stratified by
+# category, every unknown class at or above the test-period support floor.
+# protocol.load_split drops these classes' flows from `train` and keeps them
+# everywhere else, so validation and test hold real unknown flows.
+unknown_classes:
+  - 0  # 3dsecure (Internet banking, 456 test flows)
+  - 4  # adobe-authentication (Authentication, 291 test flows)
+  - 6  # adobe-notifications (Notifications, 908 test flows)
+  - 8  # adobe-updater (Software updates, 1197 test flows)
+  - 10  # alza-bnr (Advertising, 721 test flows)
+  - 15  # amazon-alexa (Virtual assistant, 314 test flows)
+  - 25  # appnexus (Advertising, 22023 test flows)
+  - 30  # bitdefender-gravityzone (Antivirus, 2013 test flows)
+  - 34  # cesnet-gerrit (Information systems, 461 test flows)
+  - 40  # chrome-remotedesktop (Remote desktop, 643 test flows)
+  - 45  # ctu-matrix (Instant messaging, 798 test flows)
+  - 53  # duckduckgo (Search, 606 test flows)
+  - 64  # facebook-web (Social, 4561 test flows)
+  - 70  # gitlab (File sharing, 314 test flows)
+  - 71  # gmail (Mail, 686 test flows)
+  - 73  # google-authentication (Authentication, 4703 test flows)
+  - 75  # google-drive (File sharing, 1994 test flows)
+  - 81  # google-translate (Other services, 1011 test flows)
+  - 82  # google-userlocation (Location, 1548 test flows)
+  - 96  # mcafee-gti (Antivirus, 23725 test flows)
+  - 109  # mozilla-telemetry (Analytics & Telemetry, 3882 test flows)
+  - 143  # soundcloud (Music, 708 test flows)
+  - 145  # steam (Games, 1411 test flows)
+  - 153  # the-weather-channel (Weather, 883 test flows)
+  - 157  # twitch (Media, 2763 test flows)
+  - 166  # visualstudio-insights (Analytics & Telemetry, 933 test flows)
+  - 170  # vse-insis (Information systems, 1683 test flows)
+  - 172  # webex (Videoconferencing, 1339 test flows)
+  - 174  # xbox-live (Games, 3639 test flows)
+  - 179  # zotero (Other APIs, 765 test flows)
+# The seed-43 draw, kept for spec 004's variance estimate (not used
+# by load_split):
+unknown_classes_variance_seed43: [2, 3, 6, 11, 12, 13, 15, 17, 25, 36, 38, 40, 53, 54, 56, 64, 71, 88, 90, 91, 104, 107, 119, 132, 133, 141, 143, 162, 170, 178]

@@ -1,0 +1,11 @@
+# Spec 007 ablation: prefix-to-flow contrastive alignment only. Plan phase 3, T5.
+defaults:
+  - pt_pat_base.yaml
+
+objective:
+  name: ssl
+  npp_weight: 0.0
+  pfc_weight: 1.0
+  temperature: 0.1
+
+variant: pfc

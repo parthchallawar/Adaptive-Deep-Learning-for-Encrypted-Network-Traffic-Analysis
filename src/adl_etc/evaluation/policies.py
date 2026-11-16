@@ -72,24 +72,40 @@ def p_echo(
     if not 0.0 <= tau <= 1.0:
         raise ValueError(f"tau must be in [0, 1], got {tau}")
     ks_sorted = _sorted_ks(dense, ks)
-    n = len(dense)
+    conf, top = _echo_inputs(dense, ppi_len, ks_sorted)
+    return _p_echo_from(conf, top, ks_sorted, tau)
+
+
+def _echo_inputs(
+    dense: DenseLogits, ppi_len: np.ndarray, ks_sorted: list[int]
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(conf, top)``, both ``[N, len(ks)]``: the argmax class's softmax
+    probability and the argmax class at each K. Everything P-ECHO needs, so a
+    tau sweep computes the softmaxes once instead of once per tau (21x fewer
+    for the report's sweep, which dominated its run time)."""
+    conf = np.empty((len(dense), len(ks_sorted)), dtype=np.float64)
+    top = np.empty((len(dense), len(ks_sorted)), dtype=np.int64)
+    for j, k in enumerate(ks_sorted):
+        probs = softmax(dense.at(k, ppi_len))
+        conf[:, j] = probs.max(axis=-1)
+        top[:, j] = probs.argmax(axis=-1)
+    return conf, top
+
+
+def _p_echo_from(
+    conf: np.ndarray, top: np.ndarray, ks_sorted: list[int], tau: float
+) -> PolicyResult:
+    n = conf.shape[0]
     committed_k = np.full(n, ks_sorted[-1], dtype=np.int64)
-    preds = np.zeros(n, dtype=np.int64)
+    preds = top[:, -1].copy()  # the forced default decision at the range's last K
     committed = np.zeros(n, dtype=bool)
     done = np.zeros(n, dtype=bool)
-
-    for k in ks_sorted:
-        probs = softmax(dense.at(k, ppi_len))
-        conf = probs.max(axis=-1)
-        hit = ~done & (conf >= tau)
+    for j, k in enumerate(ks_sorted):
+        hit = ~done & (conf[:, j] >= tau)
         committed_k[hit] = k
-        preds[hit] = probs[hit].argmax(axis=-1)
+        preds[hit] = top[hit, j]
         committed[hit] = True
         done |= hit
-
-    if not done.all():
-        last_probs = softmax(dense.at(ks_sorted[-1], ppi_len))
-        preds[~done] = last_probs[~done].argmax(axis=-1)
     return PolicyResult(k=committed_k, prediction=preds, committed=committed)
 
 
@@ -105,9 +121,14 @@ def echo_pareto_front(
     ``(mean_k, committed_accuracy)`` points (spec 005: "tau sweep gives the
     Pareto front"). Accuracy is over committed flows only, matching
     :func:`~adl_etc.evaluation.metrics.committed_accuracy`."""
+    for tau in taus:
+        if not 0.0 <= tau <= 1.0:
+            raise ValueError(f"tau must be in [0, 1], got {tau}")
+    ks_sorted = _sorted_ks(dense, ks)
+    conf, top = _echo_inputs(dense, ppi_len, ks_sorted)
     mean_ks, accs = [], []
     for tau in sorted(taus):
-        result = p_echo(dense, ppi_len, tau, ks=ks)
+        result = _p_echo_from(conf, top, ks_sorted, tau)
         mean_ks.append(mean_k(result.k))
         accs.append(committed_accuracy(result.prediction, labels, result.committed))
     return pareto_front(mean_ks, accs)

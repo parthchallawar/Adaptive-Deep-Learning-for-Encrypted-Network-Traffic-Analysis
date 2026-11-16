@@ -7,6 +7,7 @@ DATASET_DIR="data/processed"
 KERNEL_DIR="kernel"
 RESULTS_DIR="results"
 CODE_STAGE_DIR=".kaggle-code"
+CKPT_STAGE_DIR=".kaggle-ckpt"
 
 usage() {
   cat <<EOF
@@ -21,6 +22,8 @@ Commands:
   push-kernel [dir]        Push a kernel folder to Kaggle (default: kernel/;
                            e.g. kernel/export-d1). It needs a kernel-metadata.json
   pull-results <user>/<slug>   Download kernel output into results/
+  push-checkpoints <run-dir>...  Slim dataset of trained runs (best.pt + configs)
+                           for an evaluation-only kernel
 EOF
 }
 
@@ -37,7 +40,10 @@ kaggle_username() {
     return
   fi
   local owner
-  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | sed -n '2p' | cut -d, -f1 | cut -d/ -f1)"
+  # The first `owner/slug` row, not "line 2": the CLI can print an "outdated version"
+  # notice on stdout ahead of the CSV header (seen 2026-11-14), which made line 2 the
+  # header and the owner "ref".
+  owner="$(kaggle kernels list --mine --csv --page-size 1 2>/dev/null | grep -m1 -E '^[^,/]+/[^,]+,' | cut -d, -f1 | cut -d/ -f1)"
   [ -n "$owner" ] || {
     echo "Cannot tell your Kaggle username; set KAGGLE_USERNAME." >&2
     exit 1
@@ -130,6 +136,44 @@ EOF
   echo "Code pushed as $user/$slug — mount it in the kernel and add it to sys.path."
 }
 
+push_checkpoints() {
+  # A slim private dataset of trained runs, for a kernel that only evaluates them
+  # (plan phase 3, T8): `kernel_sources` mounts only a kernel's *latest* successful
+  # output, so runs spread over several sessions need another way in. Only what an
+  # eval queue entry reads is shipped -- best.pt, config_resolved.yaml,
+  # label_space.json, calibration.json (bound to best.pt's hash) and state.json (how
+  # the kernel recognises a run directory) -- not the ~2 GB logits.npy per run.
+  [ "$#" -gt 0 ] || { echo "usage: push-checkpoints <run-dir> [<run-dir> ...]" >&2; exit 1; }
+  local user slug stage="$CKPT_STAGE_DIR" run name f
+  user="$(kaggle_username)"
+  slug="adl-encrypted-traffic-checkpoints"
+  rm -rf "$stage"
+  mkdir -p "$stage/results"
+  for run in "$@"; do
+    name="$(basename "$run")"
+    for f in best.pt config_resolved.yaml label_space.json state.json; do
+      [ -f "$run/$f" ] || { echo "$run: missing $f" >&2; exit 1; }
+    done
+    mkdir -p "$stage/results/$name"
+    for f in best.pt config_resolved.yaml label_space.json state.json calibration.json; do
+      [ -f "$run/$f" ] && cp "$run/$f" "$stage/results/$name/$f"
+    done
+  done
+  cat > "$stage/dataset-metadata.json" <<EOF
+{
+  "title": "ADL Encrypted Traffic - Checkpoints",
+  "id": "$user/$slug",
+  "licenses": [{"name": "CC0-1.0"}]
+}
+EOF
+  if kaggle datasets status "$user/$slug" >/dev/null 2>&1; then
+    kaggle datasets version -p "$stage" -m "checkpoints: $*" --dir-mode zip
+  else
+    kaggle datasets create -p "$stage" --dir-mode zip
+  fi
+  echo "Checkpoints pushed as $user/$slug ($# run(s)) — add it to dataset_sources."
+}
+
 push_kernel() {
   local dir="${1:-$KERNEL_DIR}"
   [ -f "$dir/kernel-metadata.json" ] || {
@@ -154,5 +198,6 @@ case "$cmd" in
   push-code) push_code "$@" ;;
   push-kernel) push_kernel "$@" ;;
   pull-results) pull_results "$@" ;;
+  push-checkpoints) push_checkpoints "$@" ;;
   *) usage; exit 1 ;;
 esac

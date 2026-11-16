@@ -1,0 +1,19 @@
+# The Prefix-Aware Transformer, PAT (spec 006, revised 2026-10-03; plan phase 3, T4).
+# Shared by B5 (plain full-flow training), SSL pretraining and prefix fine-tuning;
+# each of those supplies its own `train:` and `objective:`.
+model:
+  name: pat
+  d_model: 128
+  layers: 4
+  heads: 4
+  ffn: 512            # 4x d_model (spec 006 revision; 256 stays in the T9 search)
+  dropout: 0.1
+  side_channel: true  # exact sizes reach the model (plan F10); off is a T6 ablation
+  causal: true
+  proj_dim: 128
+  safe_hidden: 64
+
+search:
+  train.lr: {loguniform: [0.0003, 0.003]}
+  train.weight_decay: {loguniform: [0.00001, 0.01]}
+  model.ffn: {choice: [256, 512]}

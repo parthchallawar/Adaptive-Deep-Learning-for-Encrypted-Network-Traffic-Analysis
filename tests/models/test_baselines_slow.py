@@ -27,9 +27,10 @@ from adl_etc.evaluation.dense_logits import DenseLogits
 from adl_etc.evaluation.metrics import balanced_accuracy
 from adl_etc.models.baselines import build_model
 from adl_etc.models.baselines.predict import predict_dense
+from adl_etc.models.registry import build_model as build_any
 from adl_etc.training.datasets import ArrayData, FlowBatches
 from adl_etc.training.labels import LabelSpace
-from adl_etc.training.loop import TrainSettings, fit
+from adl_etc.training.loop import ClassifyObjective, TrainSettings, fit
 from adl_etc.utils.config import load_config
 from adl_etc.utils.runinfo import RunInfo
 from adl_etc.utils.seeding import seed_everything
@@ -47,29 +48,37 @@ DATASETS = {"d4": "ustc-tfc2016", "d3": "iscx-vpn-2016"}
 # --- strict overfit, synthetic (spec 005's test, on data where it is well-posed) -----------------
 
 
-@pytest.mark.parametrize("name", ["cnn", "gru", "lstm"])
+@pytest.mark.parametrize("name", ["cnn", "gru", "lstm", "pat"])
 def test_each_model_overfits_a_512_flow_set_above_99_percent_in_200_steps(
     name: str, tmp_path: Path
 ) -> None:
     """Spec 005: > 99% train accuracy on a 512-flow subset in 200 steps. Run on
     synthetic separable flows, where it isolates model and loop from data ambiguity
-    (raw D4 makes it unachievable for any model, see spec 005)."""
+    (raw D4 makes it unachievable for any model, see spec 005). The PAT (spec 006,
+    plan phase 3 T4) is held to the same bar at the Transformer peak LR, trained
+    as B5 (last real packet only) with dropout off."""
     classes = 8
     data = make_flows(512, classes, seed=1)
     shards = write_shards(tmp_path, data, n_classes=classes)
     std = Standardizer.fit(shards)
     shards.close()
-    fb = FlowBatches(data, LabelSpace.create(range(classes)), standardizer=std, train=True)
+    is_pat = name == "pat"
+    model = build_any({"name": name, **({"dropout": 0.0} if is_pat else {})}, classes)
+    views = tuple(getattr(model, "views", ("continuous",)))
+    fb = FlowBatches(
+        data, LabelSpace.create(range(classes)), standardizer=std, views=views, train=True
+    )
     info = make_info(tmp_path, make_cfg(tmp_path), name=f"bl-{name}-v-syn-s0")
     seed_everything(0)
-    settings = TrainSettings(  # spec 005's CNN/RNN peak LR, no regularisation, 25 x 8 = 200 steps
-        epochs=25, batch_size=64, lr=3e-3, patience=99, amp=False,
+    settings = TrainSettings(  # spec 005's peak LRs, no regularisation, 25 x 8 = 200 steps
+        epochs=25, batch_size=64, lr=1e-3 if is_pat else 3e-3, patience=99, amp=False,
         label_smoothing=0.0, balanced_cap=None,
     )  # fmt: skip
+    objective = ClassifyObjective(classes, 0.0, key="cls", final_only=True) if is_pat else None
 
     result = fit(
-        build_model({"name": name}, classes), fb, fb,
-        settings=settings, run_dir=tmp_path / "run", run_info=info,
+        model, fb, fb, settings=settings, run_dir=tmp_path / "run", run_info=info,
+        objective=objective,
     )  # fmt: skip
 
     assert result.history[-1]["val_acc"] > 0.99, f"{name}: {result.history[-1]['val_acc']:.4f}"
@@ -134,23 +143,30 @@ def check_curve(
     assert curve[-1] > chance + 0.2, f"{label}: K=30 barely above chance {chance:.3f}: {curve}"
 
 
-@pytest.mark.parametrize("model_name", ["cnn", "gru"])
+@pytest.mark.parametrize("model_name", ["cnn", "gru", "pat"])
 def test_b2_and_b3_train_pause_resume_and_have_sane_curves_on_real_traffic(
     real, model_name: str, tmp_path: Path
 ) -> None:
+    """B2, B3 and the PAT (plan phase 3, T4; trained on every prefix here, through
+    its ``cls`` head) on real traffic: exact pause/resume and a sane curve."""
     name, data, std, space = real
     tr, va = split(data, 10_000, seed=1)
-    train = FlowBatches(tr, space, standardizer=std, train=True)
-    val = FlowBatches(va, space, standardizer=std)
+    is_pat = model_name == "pat"
+    views = ("tokens", "continuous") if is_pat else ("continuous",)
+    train = FlowBatches(tr, space, standardizer=std, views=views, train=True)
+    val = FlowBatches(va, space, standardizer=std, views=views)
     info = make_info(tmp_path, make_cfg(tmp_path), name=f"bl-{model_name}-v-{name}-s0")
-    settings = TrainSettings(epochs=4, batch_size=256, lr=3e-3, patience=99, amp=False)
+    lr = 1e-3 if is_pat else 3e-3  # spec 005: Transformer vs CNN/RNN peak LR
+    settings = TrainSettings(epochs=4, batch_size=256, lr=lr, patience=99, amp=False)
 
     def run(run_dir: Path, **kw):
         seed_everything(0)
-        model = build_model({"name": model_name}, space.n_classes)
+        model = build_any({"name": model_name}, space.n_classes)
+        objective = ClassifyObjective(space.n_classes, 0.1, key="cls") if is_pat else None
         return fit(
-            model, train, val, settings=settings, run_dir=run_dir, run_info=info, **kw
-        ), model
+            model, train, val, settings=settings, run_dir=run_dir, run_info=info,
+            objective=objective, **kw,
+        ), model  # fmt: skip
 
     whole, m_whole = run(tmp_path / "whole")
     first, _ = run(tmp_path / "split", pause_check=lambda done, s: done == 2)

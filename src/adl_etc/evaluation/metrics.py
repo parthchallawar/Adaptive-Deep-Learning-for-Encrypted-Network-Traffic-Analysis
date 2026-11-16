@@ -196,6 +196,31 @@ def auc_k(
     return float(np.mean(accs))
 
 
+def causal_accuracy_curve(
+    preds: np.ndarray, labels: np.ndarray, ppi_len: np.ndarray
+) -> np.ndarray:
+    """``acc@K`` for K = 1..K_MAX from a **causal** model's per-position
+    predictions ``preds[N, K_MAX]`` (argmax at each packet position), read at
+    each flow's effective K exactly as ``DenseLogits.at`` reads an ``effective``
+    array.
+
+    For validation during training (plan phase 3, T6): the full logits of a
+    whole validation period are ``N x 30 x C`` floats (about 15 GB for D1's val
+    at C = 150), the argmaxes are ``N x 30`` small ints. Only valid for causal
+    (effective-indexed) predictions; ``auc_k(from_causal(logits))`` equals
+    ``causal_accuracy_curve(logits.argmax(-1)).mean()`` (tested)."""
+    preds = np.asarray(preds)
+    labels = np.asarray(labels)
+    k_max = preds.shape[1]
+    rows = np.arange(len(labels))
+    return np.array(
+        [
+            float(np.mean(preds[rows, _index_at_k(ppi_len, k, k_max)] == labels))
+            for k in range(1, k_max + 1)
+        ]
+    )
+
+
 def k95(
     dense: DenseLogits,
     labels: np.ndarray,

@@ -31,8 +31,10 @@ import json
 import os
 import platform
 import re
+import shutil
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -140,30 +142,42 @@ def find_shard_root() -> Path:
     raise SystemExit("no cesnet-tls-year22 shard set found under " + str(INPUT))
 
 
-def resolve_split_config(code_root: Path) -> tuple[Path, Path]:
-    """A copy of ``configs/splits/d1_main.yaml`` whose ``standardizer:``
-    fields point at the mounted ``standardizer.json`` -- the committed value
-    is a local path (``results/standardizer.json``) that does not exist on
-    Kaggle, and ``assert_standardizer_hash_consistent`` loads it literally.
-    Also returns the real ``std_path`` itself: a training config's own
-    top-level ``standardizer:`` key is separate from the split file's (found
-    for real 2026-09-23: the split resolved fine, then
-    ``training.run.load_train_val`` tried the config's *unresolved* default,
-    ``results/standardizer.json``, and failed) and needs the same override."""
+def find_standardizer() -> Path:
+    """The mounted export's ``standardizer.json``."""
     candidates = sorted(INPUT.rglob("standardizer.json"))
     if not candidates:
         raise SystemExit("no standardizer.json found under " + str(INPUT))
-    std_path = candidates[0]
-    spec_text = (code_root / "configs" / "splits" / "d1_main.yaml").read_text(encoding="utf-8")
+    return candidates[0]
+
+
+def resolve_split_file(split_file: Path, std_path: Path) -> Path:
+    """A copy of ``split_file`` whose ``standardizer:`` fields point at the
+    mounted ``standardizer.json`` -- the committed value is a local path
+    (``results/standardizer.json``) that does not exist on Kaggle, and
+    ``assert_standardizer_hash_consistent`` loads it literally. Everything else,
+    including an open-set split's inline ``unknown_classes``, is copied as is."""
     resolved = re.sub(
         r"^(\s*standardizer:).*$",
         lambda m: f"{m.group(1)} {std_path}",
-        spec_text,
+        split_file.read_text(encoding="utf-8"),
         flags=re.MULTILINE,
     )
-    resolved_path = WORK / "d1_main.resolved.yaml"
-    resolved_path.write_text(resolved, encoding="utf-8")
-    return resolved_path, std_path
+    out = WORK / f"{split_file.stem}.resolved.yaml"
+    out.write_text(resolved, encoding="utf-8")
+    return out
+
+
+def resolve_split_config(
+    code_root: Path, split_rel: str = "configs/splits/d1_main.yaml"
+) -> tuple[Path, Path]:
+    """``(resolved split copy, std_path)`` for one split file. Returns the real
+    ``std_path`` itself too: a training config's own top-level ``standardizer:``
+    key is separate from the split file's (found for real 2026-09-23: the split
+    resolved fine, then ``training.run.load_train_val`` tried the config's
+    *unresolved* default, ``results/standardizer.json``, and failed) and needs
+    the same override."""
+    std_path = find_standardizer()
+    return resolve_split_file(code_root / split_rel, std_path), std_path
 
 
 # --- the real run: work through run_queue.yaml ------------------------------------------------
@@ -190,6 +204,122 @@ def load_queue(path: Path) -> list[dict[str, Any]]:
     return [dict(entry) for entry in raw]
 
 
+def discover_previous_runs() -> dict[str, Path]:
+    """Run directories (any directory named like a run, holding a ``state.json``)
+    from a previous session's output mounted under ``INPUT``, by run name.
+
+    Each ``kaggle kernels push`` starts with an empty ``/kaggle/working`` (found
+    for real in phase 2's T8: a finished seed was retrained, not skipped, and a
+    paused run could never continue). Mounting the previous session's output --
+    this kernel's own earlier version via ``kernel_sources``, or a dataset made
+    from its pulled output -- and restoring from it is what lets a queue resume
+    across sessions (plan phase 3, T2)."""
+    from adl_etc.utils.runinfo import parse_run_name
+
+    found: dict[str, Path] = {}
+    if not INPUT.is_dir():
+        return found
+    for state in sorted(INPUT.rglob("state.json")):
+        try:
+            parse_run_name(state.parent.name)
+        except ValueError:
+            continue
+        found.setdefault(state.parent.name, state.parent)
+    return found
+
+
+def restore_run(src: Path, dest: Path) -> None:
+    """Copy a previous session's run directory into place (``/kaggle/input`` is
+    read-only; training writes into its run directory). A ``state.json`` that
+    cannot be read, or that names a checkpoint that is not there, stops the
+    kernel: silently retraining over a run that exists but is damaged would
+    throw away the evidence of what went wrong."""
+    state_path = src / "state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise SystemExit(
+            f"previous session's {state_path} is unreadable ({e}); not retraining over it"
+        ) from e
+    last = state.get("last_checkpoint")
+    if not last or not (src / str(last)).is_file():
+        raise SystemExit(
+            f"previous session's {state_path} names checkpoint {last!r}, which is not there"
+        )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest)
+
+
+def run_eval_entry(
+    entry: dict[str, Any],
+    *,
+    tag: str,
+    code_root: Path,
+    previous: dict[str, Path],
+    resolve_split: Callable[[str], Path],
+    shard_root: Path,
+    std_path: Path,
+    deadline: float,
+) -> dict[str, Any] | None:
+    """One ``{eval: <eval config>, run: <run name>, overrides: [...]}`` queue entry
+    (plan phase 3, T8): ``evaluation.run`` on an already-trained run, which is found
+    in this session's ``results/`` or in any mounted previous output (a slim
+    checkpoint dataset works: only ``best.pt``, ``config_resolved.yaml``,
+    ``label_space.json``, ``calibration.json`` and ``state.json`` are read). Output
+    goes to ``<out_root>/<run>/eval/<split>/``, never into the run directory itself,
+    so it cannot be mistaken for (or block the restore of) a training run.
+
+    Returns ``None`` when too little time is left to start, so the caller stops the
+    queue exactly as it does for training."""
+    from adl_etc.evaluation.run import main as evaluate
+    from adl_etc.utils.config import load_config
+
+    run_name = str(entry["run"])
+    cfg_path = code_root / str(entry["eval"])
+    extra = [str(o) for o in entry.get("overrides", [])]
+    cfg = load_config(cfg_path, overrides=extra)  # a bad override fails here, not mid-pass
+
+    local = Path(str(entry.get("results_root", "results"))) / run_name
+    if (local / "best.pt").is_file():
+        run_dir = local
+    elif run_name in previous and (previous[run_name] / "best.pt").is_file():
+        run_dir = previous[run_name]
+    else:
+        log(f"{tag}: no run directory {run_name!r} with a best.pt here or mounted, skipping")
+        return {"eval": run_name, "status": "missing_run"}
+
+    out_dir = Path(str(entry.get("out_root", "results/robust"))) / run_name
+    done_file = "robustness.json" if cfg.get("perturb") else "report.json"
+    marker = out_dir / "eval" / str(cfg.eval_split) / done_file
+    if marker.is_file():
+        log(f"{tag}: already evaluated, skipping")
+        return {"eval": run_name, "status": "already_finished", "out": str(out_dir)}
+
+    remaining = deadline - time.monotonic()
+    if remaining < QUEUE_STOP_MARGIN_SECONDS:
+        log(f"{tag}: only {remaining / 60:.0f} min left in the session, stopping the queue")
+        return None
+
+    log(f"{tag}: evaluating {run_dir} ({remaining / 3600:.2f} h left)")
+    t0 = time.monotonic()
+    evaluate(
+        [
+            "--config",
+            str(cfg_path),
+            "--override",
+            *extra,
+            f"run_dir={run_dir.as_posix()}",
+            f"out_dir={out_dir.as_posix()}",
+            f"split={resolve_split(str(cfg.split))}",
+            f"data_root={shard_root}",
+            f"standardizer={std_path}",
+        ]
+    )
+    minutes = (time.monotonic() - t0) / 60
+    log(f"{tag}: finished in {minutes:.1f} min -> {marker}")
+    return {"eval": run_name, "status": "finished", "run_dir": str(run_dir), "out": str(out_dir)}
+
+
 def run_queue(deadline: float) -> None:
     # add_code_to_path() must run before any `adl_etc` import: on the real
     # Kaggle image nothing has installed this package, so `sys.path` only
@@ -204,22 +334,50 @@ def run_queue(deadline: float) -> None:
     from adl_etc.training.run import is_finished, run_dir_for, run_training
     from adl_etc.utils.config import load_config
 
-    split_path, std_path = resolve_split_config(code_root)
+    std_path = find_standardizer()
     shard_root = find_shard_root()
     log(f"shards: {shard_root}")
-    log(f"resolved split: {split_path}")
     log(f"standardizer: {std_path}")
+    resolved_splits: dict[str, Path] = {}
 
     queue_path = resolve_queue_path(code_root)
     entries = load_queue(queue_path)
     log(f"queue: {len(entries)} entries from {queue_path}")
+    previous = discover_previous_runs()
+    log(f"previous session: {len(previous)} run director(ies) mounted")
     results: list[dict[str, Any]] = []
 
+    def resolve_split(split_rel: str) -> Path:
+        # Each entry uses the split its own config names (d1_open for phase 3, d1_main
+        # for phase 2's closed-set runs) -- never one hard-coded file, which would
+        # silently turn an open-set config into a closed-set run.
+        if split_rel not in resolved_splits:
+            resolved_splits[split_rel] = resolve_split_file(code_root / split_rel, std_path)
+            log(f"resolved split: {split_rel} -> {resolved_splits[split_rel]}")
+        return resolved_splits[split_rel]
+
     for i, entry in enumerate(entries):
+        if "eval" in entry:
+            outcome = run_eval_entry(
+                entry,
+                tag=f"[{i + 1}/{len(entries)}] eval {entry.get('run')}",
+                code_root=code_root,
+                previous=previous,
+                resolve_split=resolve_split,
+                shard_root=shard_root,
+                std_path=std_path,
+                deadline=deadline,
+            )
+            if outcome is None:  # out of time: stop starting new work, as for training
+                break
+            results.append(outcome)
+            continue
+
         cfg_path = code_root / str(entry["config"])
+        split_rel = str(load_config(cfg_path, overrides=list(entry.get("overrides", []))).split)
         overrides = [
             *entry.get("overrides", []),
-            f"split={split_path}",
+            f"split={resolve_split(split_rel)}",
             f"data_root={shard_root}",
             f"standardizer={std_path}",
         ]
@@ -227,6 +385,10 @@ def run_queue(deadline: float) -> None:
         seed = int(cfg.seed)
         run_dir = run_dir_for(cfg, seed)
         tag = f"[{i + 1}/{len(entries)}] {run_dir.name}"
+
+        if not run_dir.exists() and run_dir.name in previous:
+            restore_run(previous[run_dir.name], run_dir)
+            log(f"{tag}: restored from the previous session ({previous[run_dir.name]})")
 
         if is_finished(run_dir):
             log(f"{tag}: already finished, skipping")
@@ -240,9 +402,12 @@ def run_queue(deadline: float) -> None:
 
         log(f"{tag}: starting ({remaining / 3600:.2f} h left)")
         result = run_training(cfg, seed=seed, deadline=deadline, code_root=code_root)
+        # best_metric is whatever the objective monitors (val macro-F1 for a baseline,
+        # val AUC_K for prefix fine-tuning, val SSL loss for pretraining), so the log
+        # names it neutrally (Session 1 printed an SSL loss as "best_val_macro_f1").
         log(
             f"{tag}: {result.status} after {result.epochs_done} epoch(s), "
-            f"best_val_macro_f1={result.best_metric:.4f}"
+            f"best monitored metric={result.best_metric:.4f}"
         )
         results.append(
             {

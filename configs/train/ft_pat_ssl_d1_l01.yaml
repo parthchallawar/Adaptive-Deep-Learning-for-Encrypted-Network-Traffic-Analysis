@@ -1,0 +1,14 @@
+# Spec 008 fine-tuning from a pretrained PAT (spec 007), same regime as
+# ft_pat_d1_l01.yaml (plan phase 3, T6): lower peak LR and layer-wise LR decay 0.85
+# per block from the top, to keep the pretrained low-level features. `init_from` is
+# required (`???`): the queue supplies the SSL checkpoint, and run_training refuses
+# to start without one rather than silently training from scratch.
+defaults:
+  - ft_pat_d1_l01.yaml
+
+train:
+  lr: 0.0005
+  layer_decay: 0.85
+
+init_from: ???
+variant: ssl_l01

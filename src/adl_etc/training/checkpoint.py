@@ -48,6 +48,14 @@ def load_checkpoint(path: str | Path, *, map_location: str = "cpu") -> dict[str,
     return payload
 
 
+def inference_state_dict(payload: dict[str, Any]) -> dict[str, Any]:
+    """The weights to evaluate or deploy: the EMA average when the run kept one
+    (spec 008), otherwise the trained weights. ``payload["model"]`` stays the raw
+    weights either way, because that is what a resume continues from."""
+    ema = payload.get("ema")
+    return ema["model"] if ema is not None else payload["model"]
+
+
 def check_compatible(
     ckpt: dict[str, Any],
     *,

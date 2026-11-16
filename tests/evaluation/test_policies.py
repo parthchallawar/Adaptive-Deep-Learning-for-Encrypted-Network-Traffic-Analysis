@@ -264,3 +264,41 @@ def test_energy_score_is_lower_for_a_confident_flow():
     confident = np.array([[10.0, -10.0]])
     flat = np.array([[0.0, 0.0]])
     assert PL.energy_score(confident)[0] < PL.energy_score(flat)[0]
+
+
+def test_the_shared_softmax_path_equals_a_brute_force_p_echo() -> None:
+    """P-ECHO now computes each K's softmax once per sweep instead of once per
+    tau (plan phase 3: the report's sweep dominated a Kaggle run); the decisions
+    must be exactly those of the plain per-tau rule."""
+    import numpy as np
+
+    from adl_etc.evaluation.dense_logits import from_causal
+    from adl_etc.evaluation.metrics import softmax
+    from adl_etc.evaluation.policies import echo_pareto_front, p_echo
+
+    rng = np.random.default_rng(3)
+    logits = rng.normal(size=(500, 30, 6)) * 2
+    ppi_len = rng.integers(1, 31, 500)
+    labels = rng.integers(0, 6, 500)
+    dense = from_causal(logits)
+    ks = list(range(1, 31))
+
+    def brute(tau: float):
+        k_out = np.full(500, 30)
+        pred = np.zeros(500, dtype=int)
+        done = np.zeros(500, dtype=bool)
+        for k in ks:
+            probs = softmax(dense.at(k, ppi_len))
+            hit = ~done & (probs.max(-1) >= tau)
+            k_out[hit], pred[hit] = k, probs[hit].argmax(-1)
+            done |= hit
+        pred[~done] = softmax(dense.at(30, ppi_len))[~done].argmax(-1)
+        return k_out, pred, done
+
+    for tau in (0.0, 0.3, 0.6, 0.9, 1.0):
+        got = p_echo(dense, ppi_len, tau)
+        k_out, pred, done = brute(tau)
+        assert (got.k == k_out).all() and (got.prediction == pred).all()
+        assert (got.committed == done).all()
+    front = echo_pareto_front(dense, labels, ppi_len, [0.2, 0.5, 0.8])
+    assert front and all(0 <= acc <= 1 for _, acc in front)

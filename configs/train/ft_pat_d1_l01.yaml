@@ -1,0 +1,15 @@
+# Spec 008's 1% label regime (plan phase 3, T6; F11). ~54k labelled flows at batch
+# 1024 is only ~53 steps per real epoch, so an "epoch" here is 512,000 samples (500
+# steps, drawn with replacement by the balanced sampler) and 6 of them make the
+# 3,000-step floor, validated every 500 steps. At the original batch 4096 x 15
+# epochs this regime got ~220 steps and an EMA still 80% made of initial weights.
+defaults:
+  - ft_pat_d1.yaml
+
+train:
+  batch_size: 1024
+  samples_per_epoch: 512000
+  epochs: 6
+
+label_fraction: 0.01
+variant: scratch_l01

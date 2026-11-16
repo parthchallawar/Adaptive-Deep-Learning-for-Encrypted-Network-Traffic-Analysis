@@ -151,6 +151,94 @@ def test_run_report_hash_is_stable_across_two_identical_runs(tmp_path):
     assert first == second
 
 
+_PERTURB_BLOCK = """
+save_arrays: false
+perturb:
+  - {name: drop_50, kind: drop, value: 0.5}
+  - {name: jitter, kind: ipt_jitter, value: 0.5}
+"""
+
+
+def test_run_with_perturb_writes_a_report_per_condition_and_a_summary(tmp_path):
+    eval_yaml, out_dir = build_run(tmp_path)
+    eval_yaml.write_text(eval_yaml.read_text() + _PERTURB_BLOCK, encoding="utf-8")
+    assert EVAL_RUN.main(["--config", str(eval_yaml)]) == 0
+
+    eval_dir = out_dir / "eval" / "test"
+    clean = Report.load(eval_dir / "report.json")
+    assert not (eval_dir / A.LOGITS_FILE).exists(), "save_arrays: false must skip logits"
+    from adl_etc.evaluation.bootstrap import PREDICTIONS_FILE, Predictions
+
+    preds = Predictions.load(eval_dir / PREDICTIONS_FILE)  # written either way
+    assert preds.preds.shape == (clean.n_flows, len(clean.ks))
+    assert (eval_dir / "robustness_acc_vs_k.png").exists()
+    summary = json.loads((eval_dir / "robustness.json").read_text())
+    assert list(summary["conditions"]) == ["clean", "drop_50", "jitter"]
+    assert summary["report_hashes"]["clean"] == clean.hash
+    assert summary["conditions"]["clean"]["auc_k"] == pytest.approx(clean.auc_k)
+
+    dropped = Report.load(eval_dir / "perturb" / "drop_50" / "report.json")
+    assert dropped.n_flows == clean.n_flows  # same flows, damaged, none lost
+    assert dropped.hash != clean.hash
+    delta = summary["conditions"]["drop_50"]["delta_vs_clean"]
+    assert delta["auc_k"] == pytest.approx(dropped.auc_k - clean.auc_k)
+
+
+def test_run_perturb_is_reproducible(tmp_path):
+    eval_yaml, out_dir = build_run(tmp_path)
+    eval_yaml.write_text(eval_yaml.read_text() + _PERTURB_BLOCK, encoding="utf-8")
+    EVAL_RUN.main(["--config", str(eval_yaml)])
+    first = json.loads((out_dir / "eval" / "test" / "robustness.json").read_text())
+    EVAL_RUN.main(["--config", str(eval_yaml)])
+    second = json.loads((out_dir / "eval" / "test" / "robustness.json").read_text())
+    assert first["report_hashes"] == second["report_hashes"]
+
+
+def test_run_rejects_a_bad_perturbation_before_loading_anything(tmp_path):
+    eval_yaml, _ = build_run(tmp_path)
+    eval_yaml.write_text(
+        eval_yaml.read_text() + "perturb:\n  - {name: x, kind: explode, value: 1}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown perturbation kind"):
+        EVAL_RUN.main(["--config", str(eval_yaml)])
+
+
+def test_run_from_a_run_dir_matches_explicit_paths(tmp_path):
+    """``run_dir`` rebuilds the model from the run's own config_resolved.yaml and
+    finds best.pt / label_space.json in it: same report as spelling them out."""
+    eval_yaml, out_dir = build_run(tmp_path)
+    EVAL_RUN.main(["--config", str(eval_yaml)])
+    explicit = Report.load(out_dir / "eval" / "test" / "report.json")
+
+    run_dir = tmp_path / "run"
+    (run_dir / "config_resolved.yaml").write_text(
+        "model: {name: gru, stem: 16, hidden: 24, layers: 1, dropout: 0.0}\n", encoding="utf-8"
+    )
+    (run_dir / "label_space.json").write_bytes((tmp_path / "label_space.json").read_bytes())
+    lines = [
+        ln
+        for ln in eval_yaml.read_text().splitlines()
+        if not ln.startswith(("model:", "checkpoint:", "label_space:", "out_dir:"))
+    ]
+    out2 = tmp_path / "results_from_run_dir"
+    lines += [f"run_dir: {run_dir.as_posix()}", f"out_dir: {out2.as_posix()}"]
+    eval_yaml.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    assert EVAL_RUN.main(["--config", str(eval_yaml)]) == 0
+    assert Report.load(out2 / "eval" / "test" / "report.json").hash == explicit.hash
+
+
+def test_run_requires_out_dir(tmp_path):
+    eval_yaml, _ = build_run(tmp_path)
+    text = "\n".join(
+        ln for ln in eval_yaml.read_text().splitlines() if not ln.startswith("out_dir:")
+    )
+    eval_yaml.write_text(text + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="out_dir"):
+        EVAL_RUN.main(["--config", str(eval_yaml)])
+
+
 def test_run_refuses_a_checkpoint_from_a_different_label_space(tmp_path):
     eval_yaml, out_dir = build_run(tmp_path)
     # Point at a label space with an extra class: the checkpoint's own hash

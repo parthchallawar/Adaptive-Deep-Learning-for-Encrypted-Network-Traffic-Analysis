@@ -1,6 +1,6 @@
 # Spec 008: Supervised Prefix Training and Calibration
 
-- **Status:** draft, revised 2026-10-03 before build (see [Revisions](#revisions)). Not implemented. Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), tasks T6 and T7.
+- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **code built and tested locally** (`adl_etc.training.{objectives,pat_losses,finetune}`, `adl_etc.evaluation.calibration`; configs `configs/train/ft_pat_*.yaml`). **Run on D1, one seed, 2026-11-13/15**: scratch and SSL-initialised at 100%/10%/1% labels, the five design ablations, each with its per-K calibration; results in [docs/results-phase-3.md](../docs/results-phase-3.md). **Correction from the runs:** this spec's dropout 0.1 and label smoothing 0.1 each cost ~1 point of AUC_K; the recommended recipe is `configs/train/ft_pat_{,ssl_}d1_tuned.yaml` (both 0, 8 epochs), and `ft_pat_d1.yaml` stays as the ablation reference. Not run: seeds 1-2, the tuned recipe at 10%/1% labels. Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), tasks T6 and T7.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 10 of 18
@@ -25,7 +25,7 @@ A model trained only on complete 30-packet flows is poorly calibrated on short p
 
 ### Losses (per flow, averaged over valid positions k <= ppi_len)
 
-1. Prefix classification: `L_cls = Σ_k w_k · CE(cls_k, y)` with label smoothing `ε`. Defaults: `w_k = min(1, k/8)` and `ε = 0.1`; both are decided on val before the main grid (see [Design choices](#design-choices-decided-on-val-before-the-main-grid)). Measured on the D1 probe day, the ramp gives K=1..5 weights of 0.125 to 0.625 (exactly where H1 is judged) and gives 44% of all supervised positions less than full weight.
+1. Prefix classification: `L_cls = Σ_k w_k · CE(cls_k, y)` with label smoothing `ε`. Defaults: `w_k = min(1, k/8)` and `ε = 0.1`; both are decided on val before the main grid (see [Design choices](#design-choices-decided-on-val-before-the-main-grid)). The ramp gives K=1..5 weights of 0.125 to 0.625 (exactly where H1 is judged), and on D1's real training weeks it gives 50.5% of all supervised positions less than full weight.
 2. Self-distillation from the full prefix: `L_sd = Σ_k w_k · KL(softmax(stopgrad(cls_len)/T) || softmax(cls_k/T))`, T = 2, weight 0.2. **The teacher `cls_len` (the last real position) is detached**, so distillation pulls early predictions toward the full-flow one and never the other way.
 3. Commit-safety: `L_safe = Σ_k BCE(safe_k, 1[argmax cls_k == y])` computed on *detached* logits so that the safety head does not push the classifier. Positive/negative reweighting by prefix so that K=1 (mostly wrong) does not dominate.
 4. Keep SSL heads alive with small weight (`L_NPP` including its `end` term, 0.1) to preserve the `next` entropy and `p_end` features and to keep spec 012's perplexity monitor meaningful after fine-tuning.
@@ -71,11 +71,13 @@ Fitted on a seeded 250k-flow sample of val (phase 2's `EvalArrays` cap), in this
 2. Temperature per K: `T_K = argmin NLL(softmax(cls_adj_K / T_K))`, 30 scalars.
 3. Commit-safety calibration: isotonic regression per K mapping `sigmoid(safe_K)` to the observed correctness rate on val, as 30 monotone lookup tables. After this, `p_safe(K) ≈ P(correct | commit at K)`, which is exactly what the controller's budget/accuracy trade-off needs. Isotonic regression is implemented with pool-adjacent-violators in NumPy (`evaluation/calibration.py`), because `evaluation/` must not import scikit-learn.
 
-Everything is saved as `calibration.json` next to the checkpoint, holding the checkpoint's hash; a mismatched pair raises. Reliability diagrams and ECE per K are reported on **test_id**, the data calibration never saw. Val ECE is logged only as a fit diagnostic.
+**Who is calibrated at K:** the known-class flows that have *reached* packet K (`ppi_len >= K`), the population a stopping decision at K actually faces. A flow that ended earlier has no "after K packets" state, and an unknown-class flow has no correct answer.
+
+Everything is saved as `calibration.json` next to the checkpoint, holding the checkpoint file's SHA-256; a mismatched pair raises. Reliability diagrams and ECE per K are reported on **test_id**, the data calibration never saw, in `calibration_report.json` beside each split's `report.json` (with the uncalibrated ECE alongside, and `safe_ece_k<K>` for the calibrated commit-safety). Val ECE is logged only as a fit diagnostic. Built as `adl_etc.evaluation.calibration` (plan phase 3, T7).
 
 ## Design choices decided on val before the main grid
 
-Four choices change results enough to matter and cannot be settled by argument. Each is tested once, one factor at a time from the default, on the scratch PAT at 100% labels, single seed, before the {scratch, SSL} × {100, 10, 1}% grid is queued:
+Five choices change results enough to matter and cannot be settled by argument. Each is tested once, one factor at a time from the default, on the scratch PAT at 100% labels, single seed, before the {scratch, SSL} × {100, 10, 1}% grid is queued:
 
 | Choice | Default | Alternative | Decided by (on val) |
 |---|---|---|---|
@@ -83,6 +85,7 @@ Four choices change results enough to matter and cannot be settled by argument. 
 | Label smoothing `ε` | 0.1 | 0 | P-ECHO accuracy at mean K ∈ {4, 6, 8} (spec 000's H2 metric). Published work reports that label smoothing can hurt selective classification, which is what the stopping policy does |
 | Dropout (100% labels) | 0.1 | 0 | `AUC_K` |
 | Side channel (spec 006) | on | off | `AUC_K` |
+| Fine-tuning augmentation (drop p = 0.05, IPT jitter s = 0.1) | on | off | `AUC_K` |
 
 A difference smaller than 3x the seed-to-seed standard deviation (measured on B5's three seeds) is a tie, and a tie keeps the default. The chosen settings and every value behind them are recorded in the plan before the grid runs; test_id is not read for any of these choices.
 
@@ -94,7 +97,7 @@ A difference smaller than 3x the seed-to-seed standard deviation (measured on B5
 ## Edge cases
 
 - Classes with zero training flows in a low-label regime: stay in the label space and count as errors (see Low-label regimes).
-- Very short flows (ppi_len <= 2): supervised at their positions only. They are rare on D1 (0.0% of probe-day flows; 3.0% have ppi_len <= 5) and are reported separately as "short-flow accuracy".
+- Very short flows (ppi_len <= 2): supervised at their positions only. They are rare on D1 (0.0% of real training flows have ppi_len <= 2; 21.5% have ppi_len <= 7) and are reported separately as "short-flow accuracy".
 - Isotonic tables with few val samples at a K (fewer than 200): fall back to a Platt (logistic) fit for that K.
 - Label noise from SNI-based labelling: label smoothing (if kept by the design choice) plus the reject option in evaluation; no cleaning.
 

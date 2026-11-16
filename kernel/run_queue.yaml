@@ -1,18 +1,47 @@
-# Kaggle training queue (plan T8, spec 015). kernel/kernel.py works through
-# this in order and stops issuing new entries once under 40 minutes remain in
-# the session. An entry already finished (its run_dir's state.json) is
-# skipped without repeating it, so pushing this same queue again after a
-# paused or killed session resumes where it left off.
+# Kaggle training queue (spec 015). kernel/kernel.py works through this in order and
+# stops issuing new entries once under 40 minutes remain in the session. An entry whose
+# run is already finished -- in this session, or restored from the previous session's
+# mounted output (plan phase 3 T2, docs/kaggle-workflow.md) -- is skipped; a paused one
+# continues. Each entry trains on the split its own config names (d1_open.yaml).
+# `eval:` entries evaluate an already-trained run (plan phase 3 T8): output goes to
+# results/robust/<run>/eval/test_id/.
 #
-# `split`/`data_root` are appended by kernel.py itself (the paths its mounted
+# `split`/`data_root`/`standardizer` are set by kernel.py itself (the paths its mounted
 # datasets resolve to); do not set them here.
 #
-# B3's 3 seeds already ran and finished for real (2026-09-23); left out here so
-# a fresh push does not retrain them for nothing (each push starts from an
-# empty /kaggle/working, so "already finished" only helps within one session).
-- config: configs/train/b2_cnn_d1.yaml
-  overrides: ["seed=0", "device=cuda"]
-- config: configs/train/b2_cnn_d1.yaml
-  overrides: ["seed=1", "device=cuda"]
-- config: configs/train/b2_cnn_d1.yaml
-  overrides: ["seed=2", "device=cuda"]
+# PHASE 3, SESSION 3 (~3.5 GPU-hours; Session 2 = kernel v15, 2026-11-14, 4h11m).
+# Mounts: this kernel's own latest output (v15: the SSL pretraining run, the SSL
+# fine-tune, B2, B3) and the slim checkpoint dataset (B5, which only v14 holds).
+# Session 1's scratch PAT is not evaluated: v14's best.pt files cannot be pulled by
+# path once a newer version exists (`kernels output <slug>/14` lists bare file
+# names), so H5's paired scratch-vs-SSL comparison is the tuned pair trained here.
+#   0. SSL pretraining (restored from v15, skipped; supplies init_from)
+#   1. Tuned PAT, scratch and SSL: Session 2's ablations showed dropout 0.1 and label
+#      smoothing 0.1 each cost ~1 point of AUC_K, and B3 (GRU) beat the default PAT
+#      early (AUC_K 0.818 vs 0.807), so the PAT gets one run with both removed.
+#   2. Robustness (H5) on test_id, the same damaged flows for every model:
+#      tuned SSL vs tuned scratch (the pair), default SSL, B3, B5, B2.
+- config: configs/train/pt_pat_npp_pfc_d1.yaml
+  overrides: ["seed=0", "device=cuda", "train.epochs=8"]
+- config: configs/train/ft_pat_d1.yaml
+  overrides: ["seed=0", "device=cuda", "train.epochs=8", "variant=tuned", "model.dropout=0.0", "train.label_smoothing=0.0"]
+- config: configs/train/ft_pat_ssl_d1.yaml
+  overrides: ["seed=0", "device=cuda", "train.epochs=8", "variant=ssl_tuned", "model.dropout=0.0", "train.label_smoothing=0.0", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: ft-pat-ssl-d1open-s0
+  overrides: ["device=cuda"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: ft-pat-ssl_tuned-d1open-s0
+  overrides: ["device=cuda"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: ft-pat-tuned-d1open-s0
+  overrides: ["device=cuda"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: bl-gru-main-d1open-s0
+  overrides: ["device=cuda"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: bl-pat-main-d1open-s0
+  overrides: ["device=cuda"]
+- eval: configs/eval/d1_open_robust.yaml
+  run: bl-cnn-main-d1open-s0
+  overrides: ["device=cuda"]

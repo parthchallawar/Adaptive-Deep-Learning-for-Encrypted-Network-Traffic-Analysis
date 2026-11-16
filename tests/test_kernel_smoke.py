@@ -185,6 +185,36 @@ def test_smoke_pauses_and_resumes_rather_than_restarting(tmp_path, monkeypatch):
 # --- the real queue path, against a synthetic D1-shaped mirror ------------------------------
 
 
+def test_each_entry_trains_on_the_split_its_own_config_names(tmp_path, monkeypatch):
+    """An entry naming an open-set split must train open-set: the kernel resolves
+    that entry's own split file, not a hard-coded d1_main.yaml (found while
+    building plan phase 3's T1a, before any open-set run reached Kaggle)."""
+    from adl_etc.training.labels import LabelSpace
+
+    results_root = tmp_path / "results"
+    input_dir, _ = build_queue_inputs(tmp_path, results_root)
+    splits = input_dir / "adl-encrypted-traffic-code" / "configs" / "splits"
+    main = (splits / "d1_main.yaml").read_text(encoding="utf-8")
+    (splits / "d1_open_test.yaml").write_text(main + "\nunknown_classes: [5]\n", encoding="utf-8")
+    queue_path = tmp_path / "open_queue.yaml"
+    queue_path.write_text(
+        "- config: configs/train/b3_gru_d1.yaml\n"
+        '  overrides: ["seed=0", "device=cpu", "train.epochs=1", "train.patience=99", '
+        f'"results_root={results_root.as_posix()}", "split=configs/splits/d1_open_test.yaml", '
+        '"split_name=opentest"]\n',
+        encoding="utf-8",
+    )
+    mod = load_kernel(
+        monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue_path), ADL_TIME_LIMIT_SECONDS=3600
+    )
+    mod.main()
+
+    run_dir = results_root / "bl-gru-main-opentest-s0"
+    space = LabelSpace.load(run_dir / "label_space.json")
+    assert space.unknown == (5,) and space.n_classes == N_CLASSES - 1
+    assert (tmp_path / "working" / "d1_open_test.resolved.yaml").is_file()
+
+
 def test_the_queue_trains_every_entry_in_order(tmp_path, monkeypatch):
     results_root = tmp_path / "results"
     input_dir, queue_path = build_queue_inputs(tmp_path, results_root)
@@ -241,3 +271,201 @@ def test_the_queue_stops_before_starting_new_work_once_the_deadline_has_passed(
     report = json.loads((tmp_path / "working" / "train_report.json").read_text())
     assert report["queue"] == []
     assert not results_root.exists() or not any(results_root.iterdir())
+
+
+# --- cross-session resume (plan phase 3, T2) ---------------------------------------------------
+
+
+def _one_entry_queue(tmp_path: Path, results_root: Path, *, epochs: int) -> Path:
+    queue_path = tmp_path / "one_queue.yaml"
+    queue_path.write_text(
+        "- config: configs/train/b3_gru_d1.yaml\n"
+        f'  overrides: ["seed=0", "device=cpu", "train.epochs={epochs}", "train.patience=99", '
+        f'"results_root={results_root.as_posix()}"]\n',
+        encoding="utf-8",
+    )
+    return queue_path
+
+
+def _end_session(tmp_path: Path, results_root: Path) -> Path:
+    """Session 1 is over: its output becomes a read-only mount of the next session
+    (as `kernel_sources` of this kernel would), and the working area is wiped."""
+    mounted = tmp_path / "input" / "previous-session" / "results"
+    shutil.copytree(results_root, mounted)
+    shutil.rmtree(results_root)
+    return mounted
+
+
+def test_a_finished_run_from_a_previous_session_is_restored_and_skipped(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    _, _ = build_queue_inputs(tmp_path, results_root)
+    queue = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    _end_session(tmp_path, results_root)
+
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+
+    report = json.loads((tmp_path / "working" / "train_report.json").read_text())
+    assert report["queue"][0]["status"] == "already_finished"  # not retrained
+    assert (results_root / "bl-gru-main-d1main-s0" / "best.pt").is_file()
+
+
+def test_a_paused_run_from_a_previous_session_continues_where_it_stopped(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    _, _ = build_queue_inputs(tmp_path, results_root)
+    queue = _one_entry_queue(tmp_path, results_root, epochs=3)
+    mod = load_kernel(
+        monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue), ADL_TIME_LIMIT_SECONDS=1
+    )
+    mod.QUEUE_STOP_MARGIN_SECONDS = 0  # let the entry start, then the guard pauses it
+    mod.main()
+    paused = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert paused["status"] == "paused" and paused["epochs_done"] == 1
+    _end_session(tmp_path, results_root)
+
+    second = load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                         ADL_TIME_LIMIT_SECONDS=3600)  # fmt: skip
+    logs: list[str] = []
+    second.log = logs.append
+    second.main()
+
+    # Training is deterministic, so a silent retrain would end identically: the log
+    # is what shows the run was restored and continued rather than redone.
+    assert any("restored from the previous session" in line for line in logs)
+    resumed = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert resumed["status"] == "finished" and resumed["epochs_done"] == 3
+    state = json.loads((results_root / "bl-gru-main-d1main-s0" / "state.json").read_text())
+    assert state["epochs_done"] == 3
+
+
+def test_a_damaged_previous_run_stops_the_kernel_instead_of_being_retrained(
+    tmp_path, monkeypatch
+):
+    results_root = tmp_path / "results"
+    _, _ = build_queue_inputs(tmp_path, results_root)
+    queue = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    mounted = _end_session(tmp_path, results_root)
+    (mounted / "bl-gru-main-d1main-s0" / "state.json").write_text("{not json", encoding="utf-8")
+
+    mod = load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                      ADL_TIME_LIMIT_SECONDS=3600)  # fmt: skip
+    with pytest.raises(SystemExit, match="unreadable"):
+        mod.main()
+    assert not (results_root / "bl-gru-main-d1main-s0").exists()
+
+
+# --- eval entries: robustness on an already-trained run (plan phase 3, T8) ------------------
+
+_EVAL_CONFIG = """\
+split: configs/splits/d1_main.yaml
+eval_split: test_id
+data_root: null
+standardizer: null
+run_dir: null
+checkpoint: null
+label_space: null
+out_dir: null
+seed: 0
+device: cpu
+eval_cap: 250000
+save_arrays: false
+perturb:
+  - {name: drop_20, kind: drop, value: 0.2}
+"""
+
+
+def _eval_queue(tmp_path: Path, results_root: Path, *, train_first: bool) -> tuple[Path, Path]:
+    code = tmp_path / "input" / "adl-encrypted-traffic-code"
+    (code / "configs" / "eval").mkdir(parents=True, exist_ok=True)
+    (code / "configs" / "eval" / "robust_test.yaml").write_text(_EVAL_CONFIG, encoding="utf-8")
+    out_root = tmp_path / "robust"
+    lines = []
+    if train_first:
+        lines += [
+            "- config: configs/train/b3_gru_d1.yaml",
+            '  overrides: ["seed=0", "device=cpu", "train.epochs=1", "train.patience=99", '
+            f'"results_root={results_root.as_posix()}"]',
+        ]
+    lines += [
+        "- eval: configs/eval/robust_test.yaml",
+        "  run: bl-gru-main-d1main-s0",
+        f"  results_root: {results_root.as_posix()}",
+        f"  out_root: {out_root.as_posix()}",
+        '  overrides: ["device=cpu"]',
+    ]
+    queue = tmp_path / "eval_queue.yaml"
+    queue.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return queue, out_root
+
+
+def test_an_eval_entry_evaluates_a_run_trained_earlier_in_the_same_queue(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    queue, out_root = _eval_queue(tmp_path, results_root, train_first=True)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+
+    report = json.loads((tmp_path / "working" / "train_report.json").read_text())
+    assert report["queue"][1]["status"] == "finished"
+    out = out_root / "bl-gru-main-d1main-s0" / "eval" / "test_id"
+    summary = json.loads((out / "robustness.json").read_text())
+    assert list(summary["conditions"]) == ["clean", "drop_20"]
+    assert (out / "perturb" / "drop_20" / "report.json").is_file()
+    assert not (out / "logits.npy").exists()
+    # the run directory itself is left alone
+    assert not (results_root / "bl-gru-main-d1main-s0" / "eval" / "test_id").exists()
+
+    # a second push skips the finished evaluation (and the finished training)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    report2 = json.loads((tmp_path / "working" / "train_report.json").read_text())
+    assert [e["status"] for e in report2["queue"]] == ["already_finished", "already_finished"]
+
+
+def test_an_eval_entry_reads_a_run_from_a_previous_sessions_mount(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    train_only = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(train_only),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    mounted = _end_session(tmp_path, results_root)
+    before = sorted(p.relative_to(mounted).as_posix() for p in mounted.rglob("*"))
+
+    queue, out_root = _eval_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+
+    entry = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert entry["status"] == "finished"
+    assert Path(entry["run_dir"]) == mounted / "bl-gru-main-d1main-s0"
+    assert (out_root / "bl-gru-main-d1main-s0" / "eval" / "test_id" / "robustness.json").is_file()
+    assert sorted(p.relative_to(mounted).as_posix() for p in mounted.rglob("*")) == before
+    assert not results_root.exists()  # nothing restored, nothing retrained
+
+
+def test_an_eval_entry_for_a_missing_run_is_reported_not_crashed(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    queue, out_root = _eval_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    entry = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert entry["status"] == "missing_run"
+    assert not out_root.exists()
+
+
+def test_an_eval_entry_is_not_started_once_the_deadline_has_passed(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    train_only = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(train_only),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    queue, out_root = _eval_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=0.001).main()  # fmt: skip
+    assert json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"] == []
+    assert not out_root.exists()

@@ -8,10 +8,12 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
-    "parthchallawar/adl-encrypted-traffic-code"
+    "parthchallawar/adl-encrypted-traffic-code",
+    "parthchallawar/adl-encrypted-traffic-checkpoints"
   ],
   "competition_sources": [],
   "kernel_sources": [
-    "parthchallawar/adl-export-d1"
+    "parthchallawar/adl-export-d1",
+    "parthchallawar/adl-encrypted-traffic-train"
   ]
 }
