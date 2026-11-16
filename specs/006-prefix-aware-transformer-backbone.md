@@ -1,6 +1,6 @@
 # Spec 006: Prefix-Aware Transformer Backbone (PAT)
 
-- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **model built and tested locally** (`adl_etc.models.pat`: `PAT`, `PATStream`; 885,821 parameters at the defaults). Not yet trained on D1: B5's Kaggle runs wait for the open-set split (plan [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), T1a). Streaming latency is spec 013's.
+- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **model built and tested locally** (`adl_etc.models.pat`: `PAT`, `PATStream`; 885,821 parameters at the defaults). **Trained on D1 (`d1_open`), one seed, 2026-11-13/15**: B5 and the prefix-trained variants; results in [docs/results-phase-3.md](../docs/results-phase-3.md). Dropout 0.1 (this spec's default) cost ~1 point of AUC_K in the ablation; the recommended training configs set it to 0, the model default is unchanged. Streaming latency is spec 013's.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 8 of 18

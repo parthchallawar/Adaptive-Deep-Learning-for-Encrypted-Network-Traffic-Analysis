@@ -1,10 +1,10 @@
 # Plan: Phase 3, the Prefix-Aware Transformer, SSL pretraining and prefix training
 
 - **Specs:** [006](../specs/006-prefix-aware-transformer-backbone.md), [007](../specs/007-self-supervised-pretraining.md), [008](../specs/008-supervised-prefix-training-and-calibration.md) (build steps 8 to 10). Also inherits B5 and B4 from [005](../specs/005-baseline-models.md), and phase 2's three open exit criteria.
-- **Status:** not started. Plan written 2026-10-03.
+- **Status:** code built (2026-10-04); Kaggle runs done for one seed (2026-11-13/15, three sessions, ~14 GPU-hours); tables, bootstrap code and a provisional verdict ([docs/results-phase-3.md](../docs/results-phase-3.md)) written 2026-11-15. **Open:** seeds 1-2 for the tuned pair and B3, the paired bootstrap they fill, B4 (deferred), and so the exit criteria are not all green. The progress log at the end has the full account. Plan written 2026-10-03.
 - **Entry gate:** phase 2's [exit criteria](phase-2-tracking-kaggle-baselines.md#exit-criteria) are 6 of 9 met. This plan starts anyway and closes the other three itself: criterion 4 in [T0](#t0--close-phase-2s-leftovers), criterion 7 in [T2](#t2--cross-session-resume-on-kaggle-closes-phase-2-criterion-7) and criterion 8 in [T4](#t4--the-pat-backbone-and-b5-spec-006). None of them blocks building the PAT, and all three are cheaper to close alongside phase-3 work than before it.
 - **Exit gate:** phase 4 (spec 010, then 009) starts when [Exit criteria](#exit-criteria) are all green.
-- **Before starting:** `phase2` is 30+ commits ahead of `main` and has not been merged. Merge it (or branch `phase3` from it) first. This is the user's call.
+- **Branches:** `phase2` was merged to `main` (PR #1); this phase was built on `phase3`, merged to `main` 2026-11-16 by owner decision with the seed runs still open.
 
 ## Approach
 

@@ -1,6 +1,6 @@
 # Spec 007: Self-Supervised Prefix-Predictive Pretraining
 
-- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **code built and tested locally** (`adl_etc.training.ssl`, `adl_etc.data.augment_batch`, `adl_etc.training.probes`; configs `configs/train/pt_pat_*.yaml`). Not yet run on D1 (Kaggle). Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), task T5.
+- **Status:** revised 2026-10-03 before build (see [Revisions](#revisions)); **code built and tested locally** (`adl_etc.training.ssl`, `adl_etc.data.augment_batch`, `adl_etc.training.probes`; configs `configs/train/pt_pat_*.yaml`). **NPP+PFC run on D1, one seed, 2026-11-13** (8 epochs, no collapse). Against this spec's own success criteria ([docs/results-phase-3.md](../docs/results-phase-3.md), provisional): H1 partly supported (>= 3 points met at K = 1 and 3, missed at K = 5 by 0.3; 10%-label criterion not met; packets-to-decision needs spec 009), H5 not supported (SSL and scratch lose the same under 10% drop). Not run: the NPP-only, PFC-only and MPM variants, seeds 1-2. Plan: [phase 3](../plans/phase-3-pat-ssl-prefix-training.md), task T5.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 9 of 18
