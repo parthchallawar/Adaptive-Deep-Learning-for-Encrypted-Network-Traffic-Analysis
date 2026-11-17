@@ -1,0 +1,138 @@
+{
+  "H1_packets": [
+    {
+      "bar": ">= 0.10 fewer",
+      "criterion": "packets to reach 80% accuracy, SSL vs scratch (Safe-Stop)",
+      "met": true,
+      "value": 0.12393535316421456
+    },
+    {
+      "bar": ">= 0.10 fewer",
+      "criterion": "packets to reach 85% accuracy, SSL vs scratch (Safe-Stop)",
+      "met": false,
+      "value": 0.08638721448322417
+    }
+  ],
+  "H2": [
+    {
+      "bar": ">= 0.015",
+      "criterion": "Safe-Stop minus P-ECHO accuracy at mean K=6",
+      "met": false,
+      "value": -0.007392341516386902
+    },
+    {
+      "bar": ">= 0",
+      "criterion": "Safe-Stop minus P-CAPE accuracy at mean K=6",
+      "met": true,
+      "value": 0.08985040262522326
+    },
+    {
+      "bar": ">= 0",
+      "criterion": "Safe-Stop minus P-RL accuracy at mean K=6",
+      "met": false,
+      "value": -0.010724310018454752
+    },
+    {
+      "bar": "Safe-Stop must be largest (largest is P-RL)",
+      "criterion": "largest Pareto area",
+      "met": false,
+      "value": 0.7851896116117706
+    },
+    {
+      "bar": "< 0",
+      "criterion": "unknown flows committed: reject-first minus commit-first",
+      "met": true,
+      "value": -0.016885306358990493
+    },
+    {
+      "bar": "<= 0.5",
+      "criterion": "extra packets for known flows, reject-first vs commit-first",
+      "met": true,
+      "value": 0.0
+    }
+  ],
+  "H3": [
+    {
+      "bar": ">= 0.85",
+      "criterion": "AUROC of u at K=8",
+      "met": true,
+      "value": 0.9100166900696616
+    },
+    {
+      "bar": ">= 0.90",
+      "criterion": "AUROC of u at K=30",
+      "met": true,
+      "value": 0.902868526476761
+    },
+    {
+      "bar": ">= 0.01 (else ship energy with per-K quantiles, plan DP-4a)",
+      "criterion": "best AUROC gain of u over raw energy, K <= 8",
+      "met": true,
+      "value": 0.11313344757113875
+    },
+    {
+      "bar": ">= 0.30",
+      "criterion": "rejection-K reduction vs the K=10 gate at matched known rejection (f=0.02)",
+      "met": false,
+      "value": 0.040073893230766856
+    },
+    {
+      "bar": ">= 0.30",
+      "criterion": "rejection-K reduction vs the K=10 gate at matched known rejection (f=0.05)",
+      "met": false,
+      "value": 0.2825080224501508
+    }
+  ],
+  "H4": [
+    {
+      "bar": "<= 0.05",
+      "criterion": "tracking error over the drift weeks, budget 4.0: controller",
+      "met": true,
+      "value": 0.02576111111111111
+    },
+    {
+      "bar": ">= 0.15 (the contrast)",
+      "criterion": "tracking error over the drift weeks, budget 4.0: static",
+      "met": false,
+      "value": 0.031021296296296297
+    },
+    {
+      "bar": "<= 0.05",
+      "criterion": "tracking error over the drift weeks, budget 6.0: controller",
+      "met": true,
+      "value": 0.034152777777777775
+    },
+    {
+      "bar": ">= 0.15 (the contrast)",
+      "criterion": "tracking error over the drift weeks, budget 6.0: static",
+      "met": false,
+      "value": 0.035175308641975316
+    },
+    {
+      "bar": "<= 0.05",
+      "criterion": "tracking error over the drift weeks, budget 8.0: controller",
+      "met": true,
+      "value": 0.0417568287037037
+    },
+    {
+      "bar": ">= 0.15 (the contrast)",
+      "criterion": "tracking error over the drift weeks, budget 8.0: static",
+      "met": false,
+      "value": 0.06165671296296297
+    },
+    {
+      "bar": "== 0",
+      "criterion": "oscillation events, all budgets, all spans, all seeds",
+      "met": false,
+      "value": 1.0
+    },
+    {
+      "bar": "<= 5",
+      "criterion": "windows to settle after a target step (worst)",
+      "met": false,
+      "value": 18.0
+    }
+  ],
+  "headline": "ft-pat-ssl_tuned-d1open",
+  "seeds": 3
+}
