@@ -131,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             attached += res.attached
             verb = "attached" if res.attached else "unchanged"
-            print(f"{verb:9s} eval {split:8s} +{res.metrics_logged} metrics  {name}  ({ed})")
+            extra = "" if res.attached or not res.files_added else f" +{','.join(res.files_added)}"
+            print(f"{verb:9s} eval {split:8s} +{res.metrics_logged} metrics{extra}  {name}  ({ed})")
         print(f"{attached} evaluation(s) attached, {len(eval_dirs) - attached} already present")
     return 1 if failures else 0
 
