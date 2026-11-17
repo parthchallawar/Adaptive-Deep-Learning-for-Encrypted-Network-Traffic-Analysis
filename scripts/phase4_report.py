@@ -11,12 +11,9 @@ needs torch or a model. Every fit uses validation scores only; see ``adl_etc.eva
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from adl_etc.evaluation.phase4 import REPORT_KS, run_report
-from adl_etc.evaluation.scores import ScoreArrays
-from adl_etc.inference.unknown import UnknownModel
+from adl_etc.evaluation.phase4 import REPORT_KS, report_for_run
 from adl_etc.utils.atomic import atomic_write_json
 
 
@@ -31,26 +28,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     run = args.run_dir
-    val = ScoreArrays.load(run / "eval" / "val" / "scores")
-    test = ScoreArrays.load(run / "eval" / "test_id" / "scores")
-    drift_dir = run / "eval" / "test_drift" / "scores"
-    drift = ScoreArrays.load(drift_dir) if drift_dir.is_dir() else None
-    um = UnknownModel.load(run / "unknown", checkpoint_hash=val.meta.get("checkpoint_hash"))
-    for name, s in (("test_id", test), ("test_drift", drift)):
-        if s is not None and s.meta.get("checkpoint_hash") != val.meta.get("checkpoint_hash"):
-            raise SystemExit(f"{name} scores come from a different checkpoint than val's")
-    n_classes = len(json.loads((run / "label_space.json").read_text(encoding="utf-8"))["known"])
-
-    report = run_report(val, test, drift, um, n_classes, window=args.window, skip_h4=args.skip_h4)
+    try:
+        report = report_for_run(
+            run, run / "label_space.json", window=args.window, skip_h4=args.skip_h4
+        )
+    except ValueError as err:  # e.g. score sets from different checkpoints
+        raise SystemExit(str(err)) from err
     out = args.out or run / "eval" / "phase4.json"
     atomic_write_json(out, report)
 
-    auroc = report["h3"]["auroc"]
     print(f"wrote {out}")
-    print("unknown AUROC (energy_raw / u) at K =", ", ".join(map(str, REPORT_KS)))
-    for sig in ("energy_raw", "u"):
-        vals = [auroc[sig].get(str(k)) for k in REPORT_KS]
-        print(f"  {sig:<11}", " ".join("  -  " if v is None else f"{v:.3f}" for v in vals))
+    if "h3" in report:
+        auroc = report["h3"]["auroc"]
+        print("unknown AUROC (energy_raw / u) at K =", ", ".join(map(str, REPORT_KS)))
+        for sig in ("energy_raw", "u"):
+            vals = [auroc[sig].get(str(k)) for k in REPORT_KS]
+            print(f"  {sig:<11}", " ".join("  -  " if v is None else f"{v:.3f}" for v in vals))
     print("closed-world accuracy at a mean of 4 / 6 / 8 packets:")
     for name, summ in report["h2"]["closed_world"].items():
         b = summ["acc_at_budget"]

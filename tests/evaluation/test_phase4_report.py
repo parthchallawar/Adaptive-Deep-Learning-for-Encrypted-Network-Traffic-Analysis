@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -48,17 +49,21 @@ def test_the_script_writes_a_strict_json_report_from_saved_scores(tmp_path: Path
     assert "4.0" in report["h2"]["closed_world"]["safe_stop"]["acc_at_budget"]
 
 
+def test_a_model_without_an_unknown_model_gets_the_closed_world_comparison_only() -> None:
+    val = make_set(30, 500, seed=1)
+    test = make_set(30, 500, seed=2)
+    report = P4.run_report(val, test, make_set(30, 500, seed=3), None, N_CLASSES, window=500)
+    assert set(report) == {"meta", "h2"}  # no H3, no H4, no open-world part
+    assert set(report["h2"]) == {"closed_world", "fronts"}
+    assert report["meta"]["unknown_weights"] is None
+    assert set(report["h2"]["closed_world"]) == {"safe_stop", "p_echo", "p_cape", "p_rl"}
+
+
 def test_a_score_set_from_another_checkpoint_is_refused(tmp_path: Path) -> None:
     import pytest
 
     val = make_set(30, 500, seed=1)
-    other = make_set(30, 500, seed=2)
-    other = type(other)(
-        **{
-            **{n: getattr(other, n) for n in P4.ScoreArrays.__dataclass_fields__},
-            "meta": {"checkpoint_hash": "different"},
-        }
-    )
+    other = replace(make_set(30, 500, seed=2), meta={"checkpoint_hash": "different"})
     run = tmp_path / "run"
     val.save(run / "eval" / "val" / "scores")
     other.save(run / "eval" / "test_id" / "scores")

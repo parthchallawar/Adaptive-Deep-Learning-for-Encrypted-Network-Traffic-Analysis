@@ -17,7 +17,9 @@ in rather than left to the caller:
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -253,17 +255,21 @@ def open_world(
 def h2_report(
     val: ScoreArrays,
     test: ScoreArrays,
-    um: UnknownModel,
+    um: UnknownModel | None,
     n_classes: int,
     *,
     budgets: Sequence[float] = BUDGETS,
 ) -> dict[str, Any]:
+    """Closed-world fronts for every policy and, when an unknown model exists, the open-world run.
+    A model without one (the GRU baseline) gets the closed-world comparison only."""
     fronts = policy_fronts(val, test, n_classes)
-    return {
+    out: dict[str, Any] = {
         "closed_world": {name: front_summary(fr, budgets) for name, fr in fronts.items()},
         "fronts": {name: {k: v.tolist() for k, v in fr.items()} for name, fr in fronts.items()},
-        "open_world": open_world(val, test, um, budget=float(np.median(budgets))),
     }
+    if um is not None:
+        out["open_world"] = open_world(val, test, um, budget=float(np.median(budgets)))
+    return out
 
 
 # --- H4: the budget controller -----------------------------------------------------------------
@@ -425,14 +431,16 @@ def run_report(
     val: ScoreArrays,
     test: ScoreArrays,
     drift: ScoreArrays | None,
-    um: UnknownModel,
+    um: UnknownModel | None,
     n_classes: int,
     *,
     window: int = 2000,
     skip_h4: bool = False,
 ) -> dict[str, Any]:
     """H3, H2 and (with ``drift`` scores) H4 for one run, JSON-safe. ``meta`` records which
-    checkpoint the scores came from so a table can refuse a mismatched set."""
+    checkpoint the scores came from so a table can refuse a mismatched set. Without an unknown
+    model (a baseline with no projection head) only the closed-world part of H2 is produced:
+    H3 needs the unknown score and H4 the rejection threshold."""
     report: dict[str, Any] = {
         "meta": {
             "checkpoint_hash": test.meta.get("checkpoint_hash"),
@@ -441,14 +449,39 @@ def run_report(
             "n_test": len(test),
             "n_drift": None if drift is None else len(drift),
             "heads": test.meta.get("heads"),
-            "unknown_weights": list(um.weights),
+            "unknown_weights": None if um is None else list(um.weights),
         },
-        "h3": h3_report(val, test, um),
         "h2": h2_report(val, test, um, n_classes),
     }
-    if drift is not None and not skip_h4:
-        report["h4"] = h4_report(val, test, drift, um, window=window)
+    if um is not None:
+        report["h3"] = h3_report(val, test, um)
+        if drift is not None and not skip_h4:
+            report["h4"] = h4_report(val, test, drift, um, window=window)
     return jsonable(report)
+
+
+def report_for_run(
+    out_dir: Path, label_space_path: Path, *, window: int = 2000, skip_h4: bool = False
+) -> dict[str, Any]:
+    """:func:`run_report` for one run, read from the files :mod:`adl_etc.evaluation.score_run`
+    wrote: ``<out_dir>/eval/{val,test_id,test_drift}/scores/`` and ``<out_dir>/unknown.{npz,json}``
+    (absent for a model with no projection head). Raises ``ValueError`` if the score sets come from
+    different checkpoints, so a mixed-up directory can never produce a table."""
+    val = ScoreArrays.load(out_dir / "eval" / "val" / "scores")
+    test = ScoreArrays.load(out_dir / "eval" / "test_id" / "scores")
+    drift_dir = out_dir / "eval" / "test_drift" / "scores"
+    drift = ScoreArrays.load(drift_dir) if drift_dir.is_dir() else None
+    ckpt = val.meta.get("checkpoint_hash")
+    for name, s in (("test_id", test), ("test_drift", drift)):
+        if s is not None and s.meta.get("checkpoint_hash") != ckpt:
+            raise ValueError(f"{name} scores come from a different checkpoint than val's")
+    um = (
+        UnknownModel.load(out_dir / "unknown", checkpoint_hash=ckpt)
+        if (out_dir / "unknown.npz").is_file()
+        else None
+    )
+    n_classes = len(json.loads(label_space_path.read_text(encoding="utf-8"))["known"])
+    return run_report(val, test, drift, um, n_classes, window=window, skip_h4=skip_h4)
 
 
 __all__ = [
@@ -466,6 +499,7 @@ __all__ = [
     "open_world",
     "policy_fronts",
     "rejection_stats",
+    "report_for_run",
     "run_report",
     "signal_columns",
     "tune_gains",

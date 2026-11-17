@@ -340,9 +340,7 @@ def test_a_paused_run_from_a_previous_session_continues_where_it_stopped(tmp_pat
     assert state["epochs_done"] == 3
 
 
-def test_a_damaged_previous_run_stops_the_kernel_instead_of_being_retrained(
-    tmp_path, monkeypatch
-):
+def test_a_damaged_previous_run_stops_the_kernel_instead_of_being_retrained(tmp_path, monkeypatch):
     results_root = tmp_path / "results"
     _, _ = build_queue_inputs(tmp_path, results_root)
     queue = _one_entry_queue(tmp_path, results_root, epochs=1)
@@ -445,6 +443,125 @@ def test_an_eval_entry_reads_a_run_from_a_previous_sessions_mount(tmp_path, monk
     assert (out_root / "bl-gru-main-d1main-s0" / "eval" / "test_id" / "robustness.json").is_file()
     assert sorted(p.relative_to(mounted).as_posix() for p in mounted.rglob("*")) == before
     assert not results_root.exists()  # nothing restored, nothing retrained
+
+
+# --- score entries: per-prefix scores and the H3/H2/H4 report (plan phase 4) -----------------
+
+_SCORE_CONFIG = """\
+split: configs/splits/d1_main.yaml
+data_root: null
+standardizer: null
+run_dir: null
+out_dir: null
+seed: 0
+device: cpu
+batch_size: 64
+splits:
+  val: {cap: 1000}
+  test_id: {cap: 1000}
+  test_drift: {per_period: 100}
+unknown:
+  enabled: true
+  per_class: 50
+  min_class_flows: 5
+  shrinkage: 0.1
+  weights: [1.0, 1.0, 0.5]
+"""
+
+
+def _score_queue(tmp_path: Path, results_root: Path, *, train_first: bool) -> tuple[Path, Path]:
+    code = tmp_path / "input" / "adl-encrypted-traffic-code"
+    (code / "configs" / "eval").mkdir(parents=True, exist_ok=True)
+    (code / "configs" / "eval" / "scores_test.yaml").write_text(_SCORE_CONFIG, encoding="utf-8")
+    out_root = tmp_path / "scores"
+    lines = []
+    if train_first:
+        lines += [
+            "- config: configs/train/b3_gru_d1.yaml",
+            '  overrides: ["seed=0", "device=cpu", "train.epochs=1", "train.patience=99", '
+            f'"results_root={results_root.as_posix()}"]',
+        ]
+    lines += [
+        "- score: configs/eval/scores_test.yaml",
+        "  run: bl-gru-main-d1main-s0",
+        f"  results_root: {results_root.as_posix()}",
+        f"  out_root: {out_root.as_posix()}",
+        '  overrides: ["device=cpu"]',
+    ]
+    queue = tmp_path / "score_queue.yaml"
+    queue.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return queue, out_root
+
+
+def test_a_score_entry_scores_a_trained_run_and_writes_a_report(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    queue, out_root = _score_queue(tmp_path, results_root, train_first=True)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+
+    entry = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][1]
+    assert entry["status"] == "finished" and entry["heads"] == "cls-only"  # a GRU: no PAT heads
+    out = out_root / "bl-gru-main-d1main-s0"
+    for split in ("val", "test_id", "test_drift"):
+        assert (out / "eval" / split / "scores" / "scores.json").is_file(), split
+    report = json.loads((out / "eval" / "phase4.json").read_text())
+    # no projection head, so no unknown model: the closed-world policy comparison only
+    assert set(report) == {"meta", "h2"} and not (out / "unknown.npz").exists()
+    assert set(report["h2"]["closed_world"]) == {"safe_stop", "p_echo", "p_cape", "p_rl"}
+    # the run directory itself is left alone, and the report is strict JSON (no NaN, no inf)
+    assert not (results_root / "bl-gru-main-d1main-s0" / "eval" / "test_drift").exists()
+
+    # a second push skips the finished entry (and the finished training)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    report2 = json.loads((tmp_path / "working" / "train_report.json").read_text())
+    assert [e["status"] for e in report2["queue"]] == ["already_finished", "already_finished"]
+
+
+def test_a_score_entry_reads_a_run_from_a_mounted_checkpoint_dataset(tmp_path, monkeypatch):
+    """The real use: the runs come from the slim checkpoint dataset, nothing is retrained."""
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    train_only = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(train_only),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    mounted = _end_session(tmp_path, results_root)
+    before = sorted(p.relative_to(mounted).as_posix() for p in mounted.rglob("*"))
+
+    queue, out_root = _score_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+
+    entry = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert entry["status"] == "finished"
+    assert Path(entry["run_dir"]) == mounted / "bl-gru-main-d1main-s0"
+    assert (out_root / "bl-gru-main-d1main-s0" / "eval" / "phase4.json").is_file()
+    assert sorted(p.relative_to(mounted).as_posix() for p in mounted.rglob("*")) == before
+    assert not results_root.exists()  # nothing restored, nothing retrained
+
+
+def test_a_score_entry_for_a_missing_run_is_reported_not_crashed(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    queue, out_root = _score_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    entry = json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"][0]
+    assert entry["status"] == "missing_run" and not out_root.exists()
+
+
+def test_a_score_entry_is_not_started_once_the_deadline_has_passed(tmp_path, monkeypatch):
+    results_root = tmp_path / "results"
+    build_queue_inputs(tmp_path, results_root)
+    train_only = _one_entry_queue(tmp_path, results_root, epochs=1)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(train_only),
+                ADL_TIME_LIMIT_SECONDS=3600).main()  # fmt: skip
+    queue, out_root = _score_queue(tmp_path, results_root, train_first=False)
+    load_kernel(monkeypatch, tmp_path, "queue", ADL_QUEUE=str(queue),
+                ADL_TIME_LIMIT_SECONDS=0.001).main()  # fmt: skip
+    assert json.loads((tmp_path / "working" / "train_report.json").read_text())["queue"] == []
+    assert not out_root.exists()
 
 
 def test_an_eval_entry_for_a_missing_run_is_reported_not_crashed(tmp_path, monkeypatch):
