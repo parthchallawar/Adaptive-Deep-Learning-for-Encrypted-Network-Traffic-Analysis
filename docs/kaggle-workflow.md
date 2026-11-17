@@ -157,6 +157,23 @@ kernel is running, its earlier versions' output cannot be listed or pulled.
 `kaggle kernels logs <slug>` prints nothing for a running session; add `-f`
 to stream it.
 
+## Pulling a file from an older kernel version
+
+`kaggle kernels output <owner>/<slug>/<version>` parses the version and then drops it, so it
+always returns the **latest** version's files, and the API's listing endpoints return 404 for any
+explicit version. That made an older version's checkpoints look lost once a newer version existed
+(2026-11-17, phase 4 T0). The download request does take a version number, so name the files:
+
+```
+python scripts/kaggle_pull_version.py parthchallawar/adl-encrypted-traffic-train 16 \
+    results/<run>/best.pt --out results/<where>
+```
+
+Run it with the Python that has the `kaggle` package (the project `.venv` does not). Verify what
+you pull (for a PAT checkpoint, its SHA-256 must equal `checkpoint_hash` in the run's
+`calibration.json`). `push-checkpoints` is the durable fix: it rebuilds the checkpoint dataset
+from **exactly** the runs named, so always name every run you want kept.
+
 ## Results: Kaggle → results/
 
 Once the kernel finishes running on Kaggle, pull its output down:
