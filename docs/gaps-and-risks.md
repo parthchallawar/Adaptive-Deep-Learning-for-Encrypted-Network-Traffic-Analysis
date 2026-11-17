@@ -62,7 +62,10 @@
 | Where | Failure | Guard |
 |---|---|---|
 | Kaggle outputs | Older kernel versions' files become unreachable | Pull or `push-checkpoints` before every push |
-| Kaggle pulls | Stops early, exit code 0 | Count files after every pull |
+| Kaggle pulls | Stops early, exit code 0 | Count files after every pull, and run `python scripts/check_shards.py --root results/kaggle-full/shards` for the shard export (it checks every array's exact size against `meta.json`) |
+| Local D1 shards | Five weeks (48-52) were silently incomplete until 2026-11-17: `load_split` reads only labels and timestamps, so the damage surfaced only when a model first read `ppi.npy` | `scripts/check_shards.py` after every pull; repaired by re-pulling `parthchallawar/adl-export-d1` for those weeks |
+| `kaggle kernels output <slug>/<version>` | The version suffix is accepted but returns the latest version's files, so an earlier version's output cannot be pulled from the command line | Pull everything you need before the next kernel push; the website's version history is the only other route |
+| Score passes on CPU | The PAT scores ~320 flows/s here (313 at 4 threads, 326 at 10), so a full set (~1.3M flows per run) takes about 70 minutes per PAT | Run full passes in one Kaggle session; use small samples for development |
 | Kaggle start-up | A kernel can fail before Python starts, with an empty log (v12) | Re-push; check quota; keep sessions self-contained |
 | Score files | Computed from a different checkpoint than the calibration | `checkpoint_hash` in every artefact; loaders raise |
 | Mahalanobis | Singular covariance at small K or for rare classes | float64, shrinkage 0.1, classes under 50 flows excluded |

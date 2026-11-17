@@ -286,6 +286,30 @@ def pareto_front(
     return front
 
 
+def acc_at_budget(
+    mean_ks: Sequence[float] | np.ndarray, accuracies: Sequence[float] | np.ndarray, budget: float
+) -> float:
+    """The best accuracy among sweep settings whose mean K is at most ``budget``; 0 when
+    the policy cannot operate that cheaply (spec 009)."""
+    mk = np.asarray(mean_ks, dtype=np.float64)
+    acc = np.asarray(accuracies, dtype=np.float64)
+    ok = mk <= budget
+    return float(acc[ok].max()) if ok.any() else 0.0
+
+
+def pareto_area(
+    mean_ks: Sequence[float] | np.ndarray,
+    accuracies: Sequence[float] | np.ndarray,
+    lo: float = 2.0,
+    hi: float = 12.0,
+    n: int = 201,
+) -> float:
+    """Mean over ``n`` budgets from ``lo`` to ``hi`` packets of :func:`acc_at_budget`
+    (spec 009's ``pareto_area``). A policy that cannot reach a budget scores 0 there, so
+    report each policy's smallest mean K beside its area."""
+    return float(np.mean([acc_at_budget(mean_ks, accuracies, b) for b in np.linspace(lo, hi, n)]))
+
+
 # --- open-set / anomaly ---------------------------------------------------------
 
 

@@ -17,7 +17,7 @@ Use [`template.md`](./template.md) as the starting point.
 
 | Plan | Covers | Status |
 |---|---|---|
-| [phase-4-unknown-stopping-budget.md](phase-4-unknown-stopping-budget.md) | specs 010, 009, 011 (build steps 11 to 13) | **next; not started.** Written 2026-11-17. First action is T0: secure the nine headline checkpoints before any Kaggle kernel push (eight are not on local disk; the tuned pair's seed 0 is only in the superseded kernel v16 output) |
+| [phase-4-unknown-stopping-budget.md](phase-4-unknown-stopping-budget.md) | specs 010, 009, 011 (build steps 11 to 13) | **in progress.** Written and started 2026-11-17: T1, T2, T3, T5 built and tested locally; no full-size run or H2/H3/H4 number yet; the tuned pair's seed-0 checkpoints are still missing. T0 (done in part): secure the nine headline checkpoints before any Kaggle kernel push (eight are not on local disk; the tuned pair's seed 0 is only in the superseded kernel v16 output) |
 | [phase-5-drift-efficiency.md](phase-5-drift-efficiency.md) | specs 012 (monitoring), 013, drift part of 004 (steps 14, 15) | forward draft, 2026-11-17; re-check at phase start |
 | [phase-6-service-dashboard-demo.md](phase-6-service-dashboard-demo.md) | specs 018, 016, 017 (steps 16 to 18) | forward draft, 2026-11-17; re-check at phase start |
 | [phase-7-report-paper.md](phase-7-report-paper.md) | spec 021 (step 19) and the experiments still owed | forward draft, 2026-11-17; re-check at phase start |

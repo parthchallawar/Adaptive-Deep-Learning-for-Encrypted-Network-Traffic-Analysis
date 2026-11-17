@@ -127,7 +127,9 @@ class BudgetController:
 
 **Replay.** Flows in `(period, flow_index)` order over `val → test_id → test_drift`, read from score files. Per window: `replay.safe_stop` on that slice with the current knobs, then `update`. `theta_init` is found by bisection on `val` so that mean K equals the target. The static baseline holds `theta_init`.
 
-**Tuning.** Gains may be tuned on the `val` period only, over `kp ∈ {0.25, 0.5, 1.0}`, `ki ∈ {0.02, 0.05, 0.1}`.
+**Tuning.** Gains may be tuned on the `val` period only, over `kp ∈ {0.5, 1.0, 1.5, 2.0}`, `ki ∈ {0, 0.02, 0.05}`, with `i_max = 1.0`.
+
+**Correction C9 (2026-11-17, found while testing the built controller; applied in `inference/controller.py`).** The update is in velocity form, so `kp` already integrates the error and `ki·I` integrates it a second time. With the text's `kp = 0.5, ki = 0.05, i_max = 5` a large first error winds `I` up and keeps pushing `θ` after the error is gone: on a synthetic plant with a known `θ → mean K` map the worst error after window 10 was 37% and a target step took 16 windows to settle. The code's defaults are `kp = 1.0, ki = 0.02, i_max = 1.0` (2% worst error, 3 windows, no oscillation on the same plant). Settling time falls with `kp` (3 and 6 windows at 1.0, 1 and 2 at 2.0 on the replay fixture), so the "≤ 5 windows" criterion is a statement about gains tuned on real validation data, not about any fixed default.
 
 **Metric definitions.**
 
