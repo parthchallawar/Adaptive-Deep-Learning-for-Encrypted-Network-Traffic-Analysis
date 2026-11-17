@@ -244,6 +244,31 @@ def criteria(groups: Groups, *, headline: str = "ft-pat-ssl_tuned-d1open") -> di
                     max(step) <= 5 and min(step) >= 0,
                 )
             )
+        smooth = [
+            w
+            for _, r in members
+            for w in (
+                dig(
+                    r,
+                    "h4",
+                    "disturbances",
+                    "target_step_8_5_8",
+                    "controller",
+                    "settling_windows_smoothed",
+                )
+                or []
+            )
+        ]
+        if smooth:
+            out["H4"].append(
+                _check(
+                    "noise-robust windows to settle after a target step (worst; mean signed error "
+                    "of 3 windows within 5%; added after seeing the strict one fail on noise)",
+                    float(max(smooth)),
+                    "<= 5",
+                    max(smooth) <= 5 and min(smooth) >= 0,
+                )
+            )
 
     # H1's third criterion (spec 007): packets to reach equal accuracy, SSL init against scratch
     scratch = groups.get(headline.replace("ft-pat-ssl_tuned", "ft-pat-tuned"))

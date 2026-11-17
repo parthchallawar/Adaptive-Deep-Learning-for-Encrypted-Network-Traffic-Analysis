@@ -47,7 +47,14 @@ def fake_report(
     }
     h4 = {
         "budgets": {},
-        "disturbances": {"target_step_8_5_8": {"controller": {"settling_windows": list(settle)}}},
+        "disturbances": {
+            "target_step_8_5_8": {
+                "controller": {
+                    "settling_windows": list(settle),
+                    "settling_windows_smoothed": list(settle),
+                }
+            }
+        },
     }
     for b in T.BUDGETS:
         h4["budgets"][b] = {

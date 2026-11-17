@@ -86,8 +86,9 @@ def test_mean_k_at_accuracy_by_hand() -> None:
 def test_tune_gains_uses_validation_only_and_returns_a_qualified_pair(streams) -> None:
     val, _, _, um = streams
     g = P4.tune_gains(val, um, window=500)
-    assert g["kp"] in (0.5, 1.0, 1.5, 2.0) and g["ki"] in (0.0, 0.02, 0.05)
-    assert len(g["grid"]) == 12 and isinstance(g["qualified"], bool)
+    assert g["kp"] in (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
+    assert g["ki"] in (0.0, 0.02, 0.05)
+    assert len(g["grid"]) == 21 and isinstance(g["qualified"], bool)
     best = min(
         (r for r in g["grid"] if r["qualified"]), key=lambda r: r["mean_abs_error"], default=None
     )

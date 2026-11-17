@@ -105,6 +105,35 @@ def test_step_schedule_is_tracked_and_settling_is_reported() -> None:
     assert max(s2["settling_windows"]) > 5
 
 
+def _trace(mean_ks: list[float], targets: list[float]) -> CR.ReplayTrace:
+    return CR.ReplayTrace(
+        [
+            {"window": i, "n": 2000, "mean_k": m, "target": t}
+            for i, (m, t) in enumerate(zip(mean_ks, targets, strict=True))
+        ],
+        [],
+    )
+
+
+def test_smoothed_settling_ignores_noise_that_breaks_the_strict_count() -> None:
+    # target 8 -> 5 at window 10. The mean sits on 5 from window 11 with +-6% noise that
+    # alternates: no 3 windows in a row are each within 5%, but the 3-window average always is.
+    ks = [8.0] * 10 + [8.4] + [5.3, 4.7, 5.3, 4.7, 5.3, 4.7, 5.3, 4.7, 5.3, 4.7]
+    tr = _trace(ks, [8.0] * 10 + [5.0] * 11)
+    s = CR.tracking_summary(tr, warmup=0)
+    assert s["settling_windows"] == [-1]  # strict: never "settled"
+    assert s["settling_windows_smoothed"] == [1]
+
+
+def test_smoothed_settling_still_catches_a_slow_or_biased_controller() -> None:
+    slow = [8.0] * 10 + [8.0, 7.5, 7.0, 6.6, 6.2, 5.9, 5.6, 5.4, 5.2, 5.1, 5.0, 5.0]
+    s = CR.tracking_summary(_trace(slow, [8.0] * 10 + [5.0] * 12), warmup=0)
+    assert s["settling_windows_smoothed"][0] > 5
+    biased = [8.0] * 10 + [6.5] * 12  # stuck 30% above the new target
+    s = CR.tracking_summary(_trace(biased, [8.0] * 10 + [5.0] * 12), warmup=0)
+    assert s["settling_windows_smoothed"] == [-1]
+
+
 def test_knobs_change_only_between_windows() -> None:
     s = drifting_scores(20, seed=5)
     ctrl = BudgetController(6.0, theta_init=0.9)

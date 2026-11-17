@@ -241,7 +241,8 @@ def tracking_summary(
     target = trace.column("target")
     n = np.array([w["n"] for w in trace.windows])
     full = n >= 0.5 * n.max()  # ignore a ragged last window
-    err = np.abs(mean_k - target) / target
+    signed = (mean_k - target) / target
+    err = np.abs(signed)
     usable = full.copy()
     usable[:warmup] = False
     out: dict[str, Any] = {
@@ -256,6 +257,7 @@ def tracking_summary(
         out["accuracy"] = float((np.nan_to_num(acc) * w).sum() / max(w.sum(), 1))
     steps = [i for i in range(1, len(target)) if target[i] != target[i - 1]]
     settle = []
+    smooth = []
     for s in steps:
         after = err[s:]
         run = [
@@ -264,7 +266,19 @@ def tracking_summary(
             if (after[i : i + settle_run] <= tol).all()
         ]
         settle.append(int(run[0]) if run else -1)  # -1: never settled
+        # A window's own mean-K is noisy (about 5% with 2000 flows), so "3 windows in a row each
+        # within 5%" is often missed by chance even when the controller sits on the target. Added
+        # on 2026-11-18, after seeing exactly that on the first real run: the same question asked
+        # of the mean signed error over the next ``settle_run`` windows, which averages the noise
+        # out and still catches a controller that is slow or biased. Reported beside the strict one.
+        sm = [
+            i
+            for i in range(len(after) - settle_run + 1)
+            if abs(float(signed[s + i : s + i + settle_run].mean())) <= tol
+        ]
+        smooth.append(int(sm[0]) if sm else -1)
     out["settling_windows"] = settle
+    out["settling_windows_smoothed"] = smooth
     out["oscillation_events"] = int(sum("oscillation" in e["reason"] for e in trace.events))
     out["infeasible_events"] = int(sum(e["reason"].startswith("infeasible") for e in trace.events))
     return out

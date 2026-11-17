@@ -23,6 +23,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--out", type=Path, default=None, help="default: <run>/eval/phase4.json")
+    parser.add_argument(
+        "--label-space",
+        type=Path,
+        default=None,
+        help="default: <run>/label_space.json (pass a local run's file when only the score "
+        "files were pulled from Kaggle; every d1_open run shares one label space)",
+    )
     parser.add_argument("--window", type=int, default=2000, help="controller window, in flows")
     parser.add_argument("--skip-h4", action="store_true", help="skip the (slowest) controller part")
     args = parser.parse_args(argv)
@@ -30,7 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     run = args.run_dir
     try:
         report = report_for_run(
-            run, run / "label_space.json", window=args.window, skip_h4=args.skip_h4
+            run,
+            args.label_space or run / "label_space.json",
+            window=args.window,
+            skip_h4=args.skip_h4,
         )
     except ValueError as err:  # e.g. score sets from different checkpoints
         raise SystemExit(str(err)) from err

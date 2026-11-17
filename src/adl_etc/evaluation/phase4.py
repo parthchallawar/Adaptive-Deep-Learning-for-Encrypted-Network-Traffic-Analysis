@@ -280,7 +280,7 @@ def tune_gains(
     um: UnknownModel,
     *,
     target: float = 6.0,
-    kps: Sequence[float] = (0.5, 1.0, 1.5, 2.0),
+    kps: Sequence[float] = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0),
     kis: Sequence[float] = (0.0, 0.02, 0.05),
     f: float = 0.02,
     window: int = 2000,
@@ -288,7 +288,10 @@ def tune_gains(
     """Choose the controller gains on the **validation** stream only: the pair with the smallest
     mean tracking error over a step schedule (target -> 0.6 target -> target), among those with
     no oscillation event and a settling time of at most 5 windows. If none qualifies the
-    smallest-error pair is returned and ``qualified`` says so."""
+    smallest-error pair is returned and ``qualified`` says so. The first real run (2026-11-17) used
+    ``kps`` up to 2.0 and every run picked 2.0, the edge of the grid, with settling of 17-18
+    windows; on validation the best pair sits at ``kp`` 3 and oscillation starts at 6, so the grid
+    now reaches 6."""
     order = np.lexsort((val.flow_index, val.period))
     u = um.score_of(val)
     theta_rej = um.theta_reject(f)
@@ -341,7 +344,11 @@ def h4_report(
     u = um.score_of(scores)
     theta_rej = um.theta_reject(f)
     names = ("val", "test_id", "test_drift")
-    out: dict[str, Any] = {"gains": {"kp": kp, "ki": ki}, "budgets": {}, "disturbances": {}}
+    out: dict[str, Any] = {
+        "gains": {"kp": kp, "ki": ki, "qualified": bool(gains.get("qualified", True))},
+        "budgets": {},
+        "disturbances": {},
+    }
 
     for b in budgets:
         theta0, reachable, achieved = CR.calibrate_theta(
