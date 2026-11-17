@@ -301,8 +301,10 @@ def sync_tree(
 # directory is attached to the one finished MLflow run of that name: scalars become
 # metrics named ``<split>.<metric>`` (``test_id.acc_k5``, ``test_id.drop_10.auc_k``)
 # and the files become artifacts under ``eval/<split>/``. A tag holds a hash of what
-# was attached, so attaching the same evaluation again does nothing, and attaching a
-# *different* one under the same split is refused instead of silently mixing two.
+# was attached, so attaching the same evaluation again logs nothing new, and attaching a
+# *different* one under the same split is refused instead of silently mixing two. The
+# same evaluation re-run with a file the first attach lacked (``predictions.npz``, which
+# evaluations only write from 2026-11-15 on) gains that file and nothing else.
 
 EVAL_REPORT = "report.json"
 EVAL_ROBUSTNESS = "robustness.json"
@@ -317,6 +319,7 @@ class AttachResult:
     run_id: str
     attached: bool  # False: this exact evaluation was already attached
     metrics_logged: int
+    files_added: tuple[str, ...] = ()  # artifacts logged by this call
 
 
 def find_eval_dirs(root: str | Path) -> list[tuple[str, str, Path]]:
@@ -413,7 +416,14 @@ def attach_eval(
     tag = f"adl.eval.{split}.hash"
     have = run.data.tags.get(tag)
     if have == digest:
-        return AttachResult(ed, run_name, split, run_id, attached=False, metrics_logged=0)
+        # Same reports, so the same metrics; only files the earlier attach lacked are added.
+        present = {Path(a.path).name for a in client.list_artifacts(run_id, f"eval/{split}")}
+        added = tuple(n for n in EVAL_FILES if (ed / n).is_file() and n not in present)
+        for name in added:
+            client.log_artifact(run_id, str(ed / name), f"eval/{split}")
+        return AttachResult(
+            ed, run_name, split, run_id, attached=False, metrics_logged=0, files_added=added
+        )
     if have is not None:
         raise SyncError(
             f"{ed}: run {run_name!r} already has a different {split!r} evaluation attached "
@@ -425,11 +435,13 @@ def attach_eval(
     metrics = [Metric(k, v, now, 0) for k, v in sorted(values.items())]
     for i in range(0, len(metrics), _METRIC_BATCH):
         client.log_batch(run_id, metrics=metrics[i : i + _METRIC_BATCH])
-    for name in EVAL_FILES:
-        if (ed / name).is_file():
-            client.log_artifact(run_id, str(ed / name), f"eval/{split}")
+    added = tuple(n for n in EVAL_FILES if (ed / n).is_file())
+    for name in added:
+        client.log_artifact(run_id, str(ed / name), f"eval/{split}")
     client.log_batch(run_id, tags=[RunTag(tag, digest)])
-    return AttachResult(ed, run_name, split, run_id, attached=True, metrics_logged=len(metrics))
+    return AttachResult(
+        ed, run_name, split, run_id, attached=True, metrics_logged=len(metrics), files_added=added
+    )
 
 
 __all__ = [

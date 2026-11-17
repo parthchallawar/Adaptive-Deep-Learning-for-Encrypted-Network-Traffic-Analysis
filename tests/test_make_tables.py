@@ -314,6 +314,29 @@ def test_attach_eval_adds_split_metrics_once_and_refuses_a_different_one(
         attach_eval(other, run_name=rd.name, split="val", tracking_uri=store.uri)
 
 
+def test_reattaching_the_same_evaluation_adds_only_files_it_lacked(
+    store: Store, tmp_path: Path
+) -> None:
+    """Phase 3 Session 4 re-ran seed 0's robustness pass only to get predictions.npz:
+    same reports (same hashes), so no metrics are logged twice, but the new file lands."""
+    rd = _pat_run(tmp_path, "tuned", 0)
+    sync(store, rd)
+    old = write_eval(tmp_path / "s3" / rd.name / "eval" / "test_id", auc=0.83, acc5=0.78,
+                     h="aaa", drop10_auc=0.8)  # fmt: skip
+    first = attach_eval(old, run_name=rd.name, split="test_id", tracking_uri=store.uri)
+    assert "predictions.npz" not in first.files_added
+
+    new = write_eval(tmp_path / "s4" / rd.name / "eval" / "test_id", auc=0.83, acc5=0.78,
+                     h="aaa", drop10_auc=0.8, preds=_preds(0.5, seed=1))  # fmt: skip
+    again = attach_eval(new, run_name=rd.name, split="test_id", tracking_uri=store.uri)
+    assert not again.attached and again.metrics_logged == 0
+    assert again.files_added == ("predictions.npz",)
+    names = {Path(a.path).name for a in store.client.list_artifacts(first.run_id, "eval/test_id")}
+    assert "predictions.npz" in names
+    third = attach_eval(new, run_name=rd.name, split="test_id", tracking_uri=store.uri)
+    assert third.files_added == ()
+
+
 def test_attach_eval_needs_the_run_imported_first(store: Store, tmp_path: Path) -> None:
     sync(store, make_run(tmp_path, seed=0, best_val_macro_f1=0.8))  # creates the experiment
     name = "ft-pat-x-d1open-s0"
