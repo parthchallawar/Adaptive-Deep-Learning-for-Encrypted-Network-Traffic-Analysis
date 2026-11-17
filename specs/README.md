@@ -6,6 +6,10 @@ One file per feature: `specs/<NNN>-<short-name>.md`. Use [`template.md`](./templ
 
 Background and rationale for all specs: [`docs/research-analysis.md`](../docs/research-analysis.md).
 
+**Where the project is and what comes next:** [`plans/ROADMAP.md`](../plans/ROADMAP.md). **How to work a task:** [`docs/playbook.md`](../docs/playbook.md). **Closed decisions:** [`docs/decisions.md`](../docs/decisions.md). **Known gaps and risks:** [`docs/gaps-and-risks.md`](../docs/gaps-and-risks.md).
+
+On 2026-11-17 the specs not yet built (009–013, 016–018) each gained an "Implementation contract" or "Pre-build notes" section that ties them to the code that now exists. Those sections override the older text of the same spec where the two disagree. Plans for phases 5 to 7 were drafted ahead of time at the owner's request (an exception to the "plan just before implementing" rule below); re-check each against real results when its phase starts.
+
 ## How to work through these
 
 One spec at a time, in the build order below. For each: read the spec, write its plan in [`plans/`](../plans/) **just before** implementing it, build to the spec's own success criteria and no further, land it with tests, then move on. Do not write all the plans up front, because what you learn in one spec changes the next.
@@ -28,14 +32,15 @@ The order below is a verified topological sort of the `Depends on` line of every
 | 8 | [006](006-prefix-aware-transformer-backbone.md) Prefix-Aware Transformer | the research backbone | **built and tested locally** (`models/pat.py`: PAT + PATStream, 885,821 params; causality, streaming equivalence, strict overfit and real D4/D3 checks pass); B5 trained on `d1_open` (one seed). **run for real on Kaggle 2026-11-13/15** (three sessions, kernel v14-v16, ~14 GPU-hours, one seed): see `docs/results-phase-3.md` and `results/summaries/phase3_table.md` |
 | 9 | [007](007-self-supervised-pretraining.md) Self-supervised pretraining | contribution C1 | **code built and tested locally** (`training/ssl.py`, `data/augment_batch.py`, `training/probes.py`; NPP+PFC with twin masking, MPM, probes; bit-exact resume through augmented views). NPP+PFC pretraining **run for real on Kaggle 2026-11-13/15** (three sessions, kernel v14-v16, ~14 GPU-hours, one seed): see `docs/results-phase-3.md` and `results/summaries/phase3_table.md`. H1 partly supported, H5 not supported (provisional, one seed); MPM never fine-tuned |
 | 10 | [008](008-supervised-prefix-training-and-calibration.md) Prefix training and calibration | produces the calibrated scores the policy needs | **code built and tested locally** (prefix objective, strict pretrained loading, label regimes with a 3,000-step floor, fine-tuning augmentation, per-K calibration in `evaluation/calibration.py`). **run for real on Kaggle 2026-11-13/17** (four sessions, kernel v14-v17, ~20 GPU-hours): see `docs/results-phase-3.md` and `results/summaries/phase3_table.md`. Recommended recipe is now `ft_pat_{,ssl_}d1_tuned.yaml` (dropout 0, label smoothing 0), three seeds; the other regimes one seed |
-| 11 | [010](010-unknown-and-anomaly-detection.md) Unknown and anomaly detection | **before 009**, which consumes its unknown score | not started |
-| 12 | [009](009-adaptive-stopping-policy.md) Adaptive stopping policy | contribution C2 | not started |
-| 13 | [011](011-resource-budget-controller.md) Resource budget controller | contribution C3 | not started |
-| 14 | [012](012-drift-monitoring-and-adaptation.md) Drift monitoring | needs the policy and controller to watch | not started |
-| 15 | [013](013-efficiency-and-latency-benchmarking.md) Efficiency benchmarking | measures everything above | not started |
-| 16 | [018](018-storage-and-database.md) Storage and database | **before 016**, which writes to it | not started |
-| 17 | [016](016-inference-service-api.md) Inference service | puts the research online | not started |
-| 18 | [017](017-dashboard.md) Dashboard | reads the service and the results | not started |
+| 11 | [010](010-unknown-and-anomaly-detection.md) Unknown and anomaly detection | **before 009**, which consumes its unknown score | not started; **next**. Plan written 2026-11-17 ([phase 4](../plans/phase-4-unknown-stopping-budget.md), T1–T2); the spec has an implementation contract |
+| 12 | [009](009-adaptive-stopping-policy.md) Adaptive stopping policy | contribution C2 | not started; phase-4 plan T3–T4; implementation contract in the spec |
+| 13 | [011](011-resource-budget-controller.md) Resource budget controller | contribution C3 | not started; phase-4 plan T5; implementation contract in the spec ("compute" budget descoped) |
+| 14 | [012](012-drift-monitoring-and-adaptation.md) Drift monitoring | needs the policy and controller to watch | not started; forward-draft plan ([phase 5](../plans/phase-5-drift-efficiency.md)); monitoring only, adaptation not scheduled |
+| 15 | [013](013-efficiency-and-latency-benchmarking.md) Efficiency benchmarking | measures everything above | not started; forward-draft plan (phase 5) |
+| 16 | [018](018-storage-and-database.md) Storage and database | **before 016**, which writes to it | not started; forward-draft plan ([phase 6](../plans/phase-6-service-dashboard-demo.md)) |
+| 17 | [016](016-inference-service-api.md) Inference service | puts the research online | not started; forward-draft plan (phase 6) |
+| 18 | [017](017-dashboard.md) Dashboard | reads the service and the results | not started; forward-draft plan (phase 6) |
+| 19 | [021](021-report-and-paper.md) Report, paper and presentation | the final artefact; writing may start after step 13 | not started; forward-draft plan ([phase 7](../plans/phase-7-report-paper.md)) |
 
 ### Outside the order
 

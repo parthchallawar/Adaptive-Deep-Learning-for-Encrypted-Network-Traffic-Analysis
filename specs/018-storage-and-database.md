@@ -70,6 +70,16 @@ Indexes: `decision(decided_at)`, `decision(flow_id)`, `decision(decision, decide
 
 - Dashboard queries return in < 200 ms with 1M decision rows on SQLite; migrations apply cleanly from an empty database.
 
+## Pre-build notes (added 2026-11-17)
+
+Build plan (forward draft): [`plans/phase-6-service-dashboard-demo.md`](../plans/phase-6-service-dashboard-demo.md), task T1. Where these disagree with the design above, they win.
+
+- **S4. Synchronous SQLAlchemy 2.x with one writer thread**, fed by a queue and flushed every 200 rows or 100 ms, WAL mode. No `aiosqlite`. Readers are ordinary short-lived sessions. The schema stays engine-neutral, so PostgreSQL remains a URL change.
+- **S4. No Alembic.** `metadata.create_all` plus a `schema_version` table; opening a database with another version raises. The database is disposable demo state on one machine; there is nothing deployed to migrate.
+- **S5. `flow.flowstats` is `float32[46]`**, not 43: the project's flow-statistics vector (`FlowRecord.flowstats()`) has 46 columns.
+- **Package path:** `src/adl_etc/service/db/` (`models.py`, `store.py`); `scripts/db_init.py`. Pruning and Parquet export scripts are optional.
+- **`decision` gains** `u_threshold` (the `θ_reject(k)` in force) and `forced` (bool), matching `inference/policy.py`'s `Decision`.
+
 ## Open questions
 
 - Whether to keep `decision_trace` on by default in demos (default: on for the inspector page, off under load).

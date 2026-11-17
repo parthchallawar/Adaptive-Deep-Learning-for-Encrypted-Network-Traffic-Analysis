@@ -85,6 +85,19 @@ Replay the drift weeks in time order; plot each signal against the measured week
 - Required: drift signals implemented, validated offline with correlation plots, shown in the dashboard.
 - Stretch: label-free adaptation recovers >= 25% of the drift-induced F1 loss on at least one drift week, or a negative result is reported.
 
+## Pre-build notes (added 2026-11-17)
+
+Build plan (forward draft): [`plans/phase-5-drift-efficiency.md`](../plans/phase-5-drift-efficiency.md), tasks T1 and T2.
+
+- **Only monitoring is planned.** The adaptation goals above are not scheduled (roadmap DP-5a); they are kept in `docs/future-work.md` FEP-3.
+- **Module:** `src/adl_etc/inference/drift.py`, torch-free: `Cusum`, `WindowStats`, `DriftMonitor`. Windows of 5,000 decided flows. Reference means and standard deviations come from replaying `val` in windows; `h` is raised until `val` gives zero alarms.
+- **Inputs are phase 4's score files** (which carry each flow's period), replayed through `evaluation/replay.py`. No model is run.
+- **`npp_ppl` is implemented as the mean next-packet negative log-likelihood** over the packets read (`mean_pkt_nll`); perplexity is its exponential and adds nothing.
+- **`prior_kl`** smooths the committed-class histogram by adding 1e-3 to every class before normalising.
+- **Two signal sets.** With a static threshold, all six signals are primary. With the controller running, `mean_k` is held by design, so the primary signals are `mean_safe_at_commit`, `mean_pkt_nll`, `prior_kl`, `reject_rate`, and **`theta_commit` itself**: a drifting threshold is the controller reporting that traffic changed.
+- **Labelled canary** (moved here from spec 011): a fixed 5,000-flow labelled validation sample replayed every 50 windows; alert if accuracy falls more than 5 points below its validation value. Optional.
+- **Weekly decay curves** (accuracy and macro-F1 at K = 5, 8, 30 and at the policy's decisions, per drift week) are computed first, in `evaluation/drift_curves.py`; the signals are validated against them.
+
 ## Open questions
 
 - Whether the refresh is worth its GPU cost in the final weeks; decide after phase 3 results.

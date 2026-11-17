@@ -1,6 +1,6 @@
 # Spec 009: Adaptive Stopping Policy (continue / commit / reject)
 
-- **Status:** draft
+- **Status:** draft; not built. Implementation contract added 2026-11-17 (see that section; it overrides older text where they differ)
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 12 of 18 (after 010)
@@ -86,6 +86,45 @@ Sweeping `θ_commit` in [0.5, 0.999] gives the (mean K, accuracy) Pareto front; 
 - At mean K = 6 on D1 test-ID, Safe-Stop accuracy exceeds P-ECHO by >= 1.5 points and matches or beats P-CAPE and P-RL; Pareto-front area larger than all baselines with the same backbone.
 - Ablation shows the next-packet-entropy feature contributes (>= 0.5 point at mean K = 4 to 6) or the negative result is reported.
 - Rejection-first ordering reduces confident misclassification of unknowns (open-set F1) without delaying known flows by more than 0.5 packets on average.
+
+## Implementation contract (added 2026-11-17, before the build)
+
+Build plan: [`plans/phase-4-unknown-stopping-budget.md`](../plans/phase-4-unknown-stopping-budget.md), tasks T3 and T4. Where this section and the text above disagree, this section wins (corrections C2, C4, C5 of that plan).
+
+**Modules.**
+
+| File | Holds | Imports torch? |
+|---|---|---|
+| `src/adl_etc/inference/policy.py` | `Decision`, `decide(...)`: the rule for one flow at one K. The service calls this | no |
+| `src/adl_etc/evaluation/replay.py` | `safe_stop`, `echo`, `cape`: the same rules vectorised over a `ScoreArrays` | no |
+| `src/adl_etc/evaluation/rl_stop.py` | P-RL: `fit(scores_val, lam)`, `apply(model, scores)` | no |
+| `configs/policy/safe_stop.yaml` | `k_min: 2`, `k_ood: 3`, `order: reject_first`, `f: 0.02`, `k_cap: 30` | |
+
+**Inputs.** `p_safe` is `Calibration.safe_probability(safe)` (already built, per-K isotonic). `u_k` and `θ_reject(k)` come from spec 010's `UnknownModel`. All of them are read from the per-run score files, never from a live model, in offline work.
+
+**Decision codes.** `0` commit, `1` reject, `2` forced commit, `3` forced reject. A forced decision happens at `L = min(k_cap, ppi_len)` when nothing fired earlier: reject if `u_L ≥ θ_reject(L)`, else commit. As in the rule above, the forced branch ignores `k_ood`, so it is the only way a flow shorter than `k_ood` packets is rejected. Reference code: `docs/design-phase-4.md` section 2. NaN inputs count as `p_safe = 0`, `u = +inf`, and are counted in the result.
+
+```python
+def decide(k, p_safe_k, u_k, pred_k, *, theta_commit, theta_reject_k, L, k_min=2, k_ood=3, order="reject_first") -> Decision | None
+def safe_stop(scores, theta_commit, f, unknown_model, *, k_min=2, k_ood=3, order="reject_first", k_cap=30) -> ReplayResult
+```
+
+**Baselines.**
+
+- P-ECHO and P-CAPE: score-based forms in `replay.py`, which must equal `evaluation/policies.py`'s `p_echo` / `p_cape` on a fixture built from real logits.
+- **P-RL** is finite-horizon optimal stopping by backward induction on `(conf_k, margin_k)`, binned 50 × 50 per K, fitted on known validation flows; `λ` sweeps the trade-off. It is our same-backbone learned stopper, **not** a re-implementation of FastFlow (no LSTM state, no online Q-learning). Say so wherever it is named.
+- The ELECTS halting head (alternative policy A) is a stretch item (~3 GPU-hours). If it is not run, it is marked descoped here with that reason.
+
+**Two evaluations**, both on `test_id`, three seeds:
+
+1. *Closed world* (H2's main test): known flows only, rejection off. 200 values of each policy's knob, evenly spaced in logit space for `θ_commit` over [0.5, 0.999]. Report accuracy at mean K = 4, 6, 8 (the best accuracy among sweep settings whose mean K is at most that budget) and `pareto_area` (the mean of that best-within-budget accuracy over 201 budgets from 2 to 12 packets; 0 where a policy cannot operate).
+2. *Open world*: all flows, `f = 0.02`. Report open-set macro-F1 ("unknown" as one extra class), the fraction of unknown flows committed, and the mean extra packets for known flows, for both check orders. A rejected known flow counts as an error.
+
+The closed-world sweep also measures spec 007's third H1 criterion: packets-to-decision at equal accuracy for the SSL model against the scratch model.
+
+**Value-of-waiting ablation.** First knock the next-packet-entropy feature out at inference (feed its training mean). If accuracy at mean K 4–6 moves by less than 0.2 points, report "no measurable contribution" and stop. Otherwise retrain only the `safe` head with the backbone frozen, with and without the feature.
+
+**Defaults are fixed before any test number is seen.** `k_min`, `k_ood` and the check order are not selected on `val`'s unknown flows (the same classes are unknown in test); their alternatives are reported as sensitivity.
 
 ## Open questions
 
