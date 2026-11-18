@@ -17,7 +17,7 @@ Use [`template.md`](./template.md) as the starting point.
 
 | Plan | Covers | Status |
 |---|---|---|
-| [phase-4-unknown-stopping-budget.md](phase-4-unknown-stopping-budget.md) | specs 010, 009, 011 (build steps 11 to 13) | **in progress.** Written and started 2026-11-17: T1, T2, T3, T5 built and tested locally; no full-size run or H2/H3/H4 number yet. T0 done: all nine headline checkpoints are local, hash-verified and backed up in the Kaggle checkpoint dataset (the tuned pair's seed 0 recovered from kernel version 16 with `scripts/kaggle_pull_version.py`, no retrain). Next: the full score passes on Kaggle |
+| [phase-4-unknown-stopping-budget.md](phase-4-unknown-stopping-budget.md) | specs 010, 009, 011 (build steps 11 to 13) | **done 2026-11-18** (T4 ablations and the ELECTS comparison descoped). Three seeds scored on Kaggle (kernel v18, 1 h 20 min); H3 AUROC bars met but not the early-rejection bar, H2 not met against P-ECHO / P-RL (Safe-Stop wins only the open-world order), H4 holds the budget but static is also fine under mild drift. See [results](../docs/results-phase-4.md). |
 | [phase-5-drift-efficiency.md](phase-5-drift-efficiency.md) | specs 012 (monitoring), 013, drift part of 004 (steps 14, 15) | forward draft, 2026-11-17; re-check at phase start |
 | [phase-6-service-dashboard-demo.md](phase-6-service-dashboard-demo.md) | specs 018, 016, 017 (steps 16 to 18) | forward draft, 2026-11-17; re-check at phase start |
 | [phase-7-report-paper.md](phase-7-report-paper.md) | spec 021 (step 19) and the experiments still owed | forward draft, 2026-11-17; re-check at phase start |

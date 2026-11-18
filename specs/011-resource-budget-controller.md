@@ -1,6 +1,6 @@
 # Spec 011: Automatic Resource Budget Controller
 
-- **Status:** draft; not built. Implementation contract added 2026-11-17 (see that section; it overrides older text where they differ)
+- **Status:** implemented and run (phase 4, 2026-11-18): `inference/controller.py`, `evaluation/controller_replay.py`; three seeds. Verdict: tracking error within 5% on the drift weeks and fast recovery from a target step, but a static threshold already holds the budget under this mild drift; see `docs/results-phase-4.md`.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 13 of 18
@@ -146,3 +146,10 @@ class BudgetController:
 
 - Window in flows vs. time (default: flows, since evaluation is replayed).
 - Whether p95-K control is needed for the report or only E[K] and compute (default: E[K] and compute in the paper; p95 in the demo).
+
+## Corrections made during phase 4 (2026-11-18)
+
+- **C6.** The "compute" budget metric is descoped (depth exits were never built); the controller targets mean K and p95 K.
+- **C7.** The canary-accuracy alert moves to spec 012 (it needs labels and belongs with drift).
+- **C9.** Defaults are `kp = 1.0, ki = 0.02, i_max = 1.0` (the spec's 0.5 / 0.05 / 5 wind up in velocity form); on real data the gains are searched on validation only, over `kp` up to 6 (the first search stopped at 2.0, the edge of its grid; every run picked `kp = 3` once it was widened).
+- **C10.** Settling time is reported two ways: the strict count (3 consecutive windows each within 5%) and a noise-robust count (mean signed error of 3 windows within 5%). The second was added after the first was seen to measure window noise, not the controller; both are shown.

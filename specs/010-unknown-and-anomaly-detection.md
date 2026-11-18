@@ -1,6 +1,6 @@
 # Spec 010: Unknown-Application and Anomalous-Traffic Detection
 
-- **Status:** draft; not built. Implementation contract added 2026-11-17 (see that section; it overrides older text where they differ)
+- **Status:** implemented and run (phase 4, 2026-11-18): code in `inference/unknown.py`, `evaluation/{scores,score_run}.py`, `training/score_pass.py`; three seeds scored on Kaggle (kernel v18). Verdict: absolute AUROC bars met, early-rejection bar (30% earlier than the K=10 gate) not met; see `docs/results-phase-4.md`.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 11 of 18 (before 009, which consumes its unknown score)
@@ -128,3 +128,9 @@ def fit_unknown_model(sums: GaussianSums, val_scores: ScoreArrays, *, beta=0.5, 
 
 - Whether the combined score should be learned (small logistic regression on val with synthetic unknowns as positives); default rule-based.
 - Rejection-first vs commit-first ordering (spec 009) interacts with FPR; both reported.
+
+## Corrections made during phase 4 (2026-11-18)
+
+- **C1.** Added a relative criterion: the combined `u_k` must beat plain energy by at least 1 AUROC point at some K <= 8, else energy with per-K quantiles ships. Measured: met, gain 0.113, entirely at K = 2 and 3; from K = 5 plain energy is as good or better.
+- **C2.** Nothing is fitted or selected on unknown-class validation flows (the 30 unknown classes are the same in `val` and `test_id`). The "learned combiner" question may use synthetic unknowns (held-out known classes) only.
+- **C3.** `proj` is never stored. The Gaussians come from running sums inside the model pass; the stored artefact is `unknown.npz` plus `unknown.json`.

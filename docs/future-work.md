@@ -74,6 +74,19 @@ Use Learn-Then-Test to pick `θ_commit` and `θ_reject(k)` with a finite-sample 
 | 30pktTCNET public weights as a baseline | Phase-7 A6, if they load within a day |
 | A second machine or cloud VM for realistic demo traffic | Only with FEP-1 |
 
+## FEP-9 — Phase 4 improvements not built (added 2026-11-18)
+
+Phase 4 closed with H2's and H3's failed bars as verdicts. Ideas that could still move them,
+all to be chosen on **held-out known classes treated as fake unknowns in validation**, never
+on the test numbers already seen:
+
+- Allow a reject from packet 2 (`k_ood = 2`); `u` is at its best there (0.77 AUROC against 0.65 for energy).
+- Spread the false-alarm budget `f` unevenly over K (more early, less late) at the same total.
+- Choose the score per K: the combined `u` early, plain energy with per-K quantiles from about K = 5.
+- A stopper in P-RL's style that also reads Safe-Stop's "safe to stop" signal, and letting Safe-Stop stop at packet 1 when very sure.
+- The T4 ablations (next-packet-entropy knock-out, order / `beta` / `k` sensitivity) and the ELECTS comparison (about 3 GPU-hours).
+- A harsher drift stream (the 18 weeks are mild; a static threshold already holds the budget), to test the controller where it should matter.
+
 ## Other datasets checked on 2026-11-17 and not used
 
 | Dataset | Finding | Verdict |

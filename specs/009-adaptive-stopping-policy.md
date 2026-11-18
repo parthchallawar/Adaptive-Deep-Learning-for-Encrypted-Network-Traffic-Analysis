@@ -1,6 +1,6 @@
 # Spec 009: Adaptive Stopping Policy (continue / commit / reject)
 
-- **Status:** draft; not built. Implementation contract added 2026-11-17 (see that section; it overrides older text where they differ)
+- **Status:** implemented and run (phase 4, 2026-11-18): `inference/policy.py`, `evaluation/{replay,rl_stop}.py`; three seeds. Verdict: Safe-Stop beats P-CAPE but not P-ECHO or P-RL in the closed world; reject-first is the safer open-world order at no extra packets; see `docs/results-phase-4.md`.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 12 of 18 (after 010)
@@ -129,3 +129,9 @@ The closed-world sweep also measures spec 007's third H1 criterion: packets-to-d
 ## Open questions
 
 - `k_min`/`k_ood` defaults (2/3) to be validated on val; CAPE-Net uses K>=10 for OOD, our per-K calibration is meant to allow earlier rejection.
+
+## Corrections made during phase 4 (2026-11-18)
+
+- **C2.** Defaults (`beta`, `k_min`, `k_ood`, `f`, check order) are fixed in advance; alternatives are ablations, never used for selection.
+- **C4.** P-RL is offline fitted-value stopping (backward induction) on `(conf, margin)` bins of the same backbone's saved scores. Where FastFlow is named, this is not a FastFlow re-implementation.
+- **C5.** The ELECTS halting-head comparison is a stretch item and was **not run** (descoped: it needs about 3 GPU-hours for a result that does not change the claim); the next-packet-entropy knock-out was also not run. Both are in `docs/future-work.md`.
