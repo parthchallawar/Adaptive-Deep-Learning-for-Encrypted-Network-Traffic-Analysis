@@ -18,7 +18,7 @@ Use [`template.md`](./template.md) as the starting point.
 | Plan | Covers | Status |
 |---|---|---|
 | [phase-4-unknown-stopping-budget.md](phase-4-unknown-stopping-budget.md) | specs 010, 009, 011 (build steps 11 to 13) | **done 2026-11-18** (T4 ablations and the ELECTS comparison descoped). Three seeds scored on Kaggle (kernel v18, 1 h 20 min); H3 AUROC bars met but not the early-rejection bar, H2 not met against P-ECHO / P-RL (Safe-Stop wins only the open-world order), H4 holds the budget but static is also fine under mild drift. See [results](../docs/results-phase-4.md). |
-| [phase-5-drift-efficiency.md](phase-5-drift-efficiency.md) | specs 012 (monitoring), 013, drift part of 004 (steps 14, 15) | forward draft, 2026-11-17; re-check at phase start |
+| [phase-5-drift-efficiency.md](phase-5-drift-efficiency.md) | specs 012 (monitoring), 013, drift part of 004 (steps 14, 15) | **done 2026-11-18** (adaptation, canary, ONNX not built). Steady decay measured for three models; class-prior KL and next-packet NLL track it; PAT full-flow 2.49 ms meets the bar, streaming step 1.65 ms does not. See [results](../docs/results-phase-5.md). |
 | [phase-6-service-dashboard-demo.md](phase-6-service-dashboard-demo.md) | specs 018, 016, 017 (steps 16 to 18) | forward draft, 2026-11-17; re-check at phase start |
 | [phase-7-report-paper.md](phase-7-report-paper.md) | spec 021 (step 19) and the experiments still owed | forward draft, 2026-11-17; re-check at phase start |
 | [phase-1-data-pipeline.md](phase-1-data-pipeline.md) | specs 001 to 004 (build steps 1 to 4) | tasks T1 to T8 done; exit criteria 2/5 blocked on a Kaggle-kernel run (D1), which phase 2's T3 closes; D3's registration gate cleared 2026-09-21 |

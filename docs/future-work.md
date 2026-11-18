@@ -87,6 +87,14 @@ on the test numbers already seen:
 - The T4 ablations (next-packet-entropy knock-out, order / `beta` / `k` sensitivity) and the ELECTS comparison (about 3 GPU-hours).
 - A harsher drift stream (the 18 weeks are mild; a static threshold already holds the budget), to test the controller where it should matter.
 
+## FEP-10 — Phase 5 items not built (added 2026-11-18)
+
+- A compiled or batched PAT streaming step (the eager step takes 1.65 ms against a 1 ms bar; thirty steps cost 22 full passes), ONNX Runtime and int8 numbers.
+- The canary-accuracy alert (a labelled sample replayed every 50 windows).
+- A false-alarm measurement for the drift monitor: needs a long stationary stretch (e.g. a year of one network with no change), or a synthetic-shift test on held-out weeks.
+- A harsher drift stream or a second dataset (D2 QUIC) to test whether class-prior KL and next-packet NLL keep their correlation with the macro-F1 where the decay is larger or abrupt.
+- Re-timing on a second machine (the numbers are from one laptop).
+
 ## Other datasets checked on 2026-11-17 and not used
 
 | Dataset | Finding | Verdict |
