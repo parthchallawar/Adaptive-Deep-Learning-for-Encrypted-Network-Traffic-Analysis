@@ -1,6 +1,6 @@
 # Spec 013: Efficiency and Latency Benchmarking
 
-- **Status:** draft
+- **Status:** implemented and run (phase 5, 2026-11-18): `evaluation/efficiency.py`, `scripts/benchmark.py`, `scripts/phase5_policy_cost.py`. Full-flow latency (2.49 ms) and parameters (885,821) meet the bars; the PAT streaming step (1.65 ms in eager PyTorch) does not meet 1 ms. GPU numbers reused from spec 015; ONNX and int8 not built. See `docs/results-phase-5.md`.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 15 of 18
@@ -73,3 +73,10 @@ Build plan (forward draft): [`plans/phase-5-drift-efficiency.md`](../plans/phase
 ## Open questions
 
 - Whether to include int8 ONNX quantisation results in the paper (default: appendix only).
+
+## Corrections made during phase 5 (2026-11-18)
+
+- **C16.** GPU throughput is not re-measured (spec 015's Kaggle numbers stand); ONNX Runtime and int8 quantisation are not built. Mean layers evaluated and compute per flow are dropped with depth exits (correction C6).
+- **C17.** A GRU streams one recurrent cell step per packet (timed directly); the non-causal CNN pays one full pass per packet. FLOPs are counted with `FlopCounterMode` (matrix products, convolutions, attention); element-wise operations are not counted.
+- **C18.** Memory is reported as weight size and the process's resident memory after a batch of 64 (a coarse figure that includes the interpreter and libraries); it is only meaningful as a difference between models run in one process.
+- **C19.** Policies are compared at a matched mean K of about 6 chosen on validation. P-CAPE's grid could not reach 6 on every model (5.5 to 7.4), so its row is not like for like.

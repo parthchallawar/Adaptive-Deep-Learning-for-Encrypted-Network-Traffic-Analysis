@@ -1,7 +1,7 @@
 # Plan: Phase 5 — drift monitoring and efficiency benchmarking
 
 - **Specs:** `specs/012-drift-monitoring-and-adaptation.md` (monitoring only), `specs/013-efficiency-and-latency-benchmarking.md`, and the drift part of `specs/004-splits-and-evaluation-protocol.md` (build steps 14, 15)
-- **Status:** not-started. **Forward draft**, written 2026-11-17 before phase 4 ran. Re-check every section against phase 4's real outputs before starting.
+- **Status:** done (2026-11-18). T1 weekly decay, T2 drift monitor, T3 efficiency and T4 tables, results document and paperwork all landed; adaptation, the canary alert, ONNX and int8 not built (descoped, `docs/future-work.md`). Verdicts in `docs/results-phase-5.md`.
 - **Starts when:** phase 4's exit criteria hold. **Exit gate:** phase 6.
 - **Roadmap:** [`ROADMAP.md`](ROADMAP.md).
 
@@ -116,3 +116,4 @@ Outputs: `results/<run>/efficiency.json`, `results/summaries/efficiency.md`, and
 ## Progress log
 
 - **2026-11-17.** Forward draft written. Not started.
+- **2026-11-18.** Re-checked against phase 4's real outputs (the 18 drift weeks decay by 6-8 accuracy points, so there is something to detect; every run's score files are local, 45 files each) and built in one session. **T1** `evaluation/drift_curves.py` (every week cut to 18,000 flows: macro-F1 over 150 classes is biased low on a smaller sample and the drift weeks hold a third of a test week's flows; threshold calibrated on validation to mean K 6). **T2** `inference/drift.py` (torch-free: `Cusum`, `window_stats`, `prior_kl`, `DriftMonitor`, `tune_h`) and `evaluation/drift_monitor.py` (two modes, static and controller; references and `h` from validation windows; Spearman against the weekly macro-F1; lead time). **T3** `evaluation/efficiency.py` (torch inside functions), `scripts/benchmark.py`, `scripts/phase5_policy_cost.py`; the FLOP consistency test (stream sum against full pass within 5%) passes; the PAT streaming step is 1.65 ms and does not improve with threads (per-operation overhead), so it misses the 1 ms bar. **T4** `evaluation/phase5_tables.py`, `scripts/make_phase5_tables.py`, `docs/results-phase-5.md`, spec corrections C11-C20. **Findings:** class-prior KL (Spearman about -0.9) and next-packet NLL (-0.89) track the weekly macro-F1; mean K and reject rate do not; no early-vs-late decay interaction; no stationary data to measure false alarms. psutil is optional (not a declared dependency).

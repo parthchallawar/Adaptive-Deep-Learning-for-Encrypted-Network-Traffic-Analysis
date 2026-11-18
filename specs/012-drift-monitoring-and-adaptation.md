@@ -1,6 +1,6 @@
 # Spec 012: Drift Monitoring and (Optional) Label-Free Adaptation
 
-- **Status:** draft (monitoring required; adaptation is a stretch goal)
+- **Status:** monitoring implemented and run (phase 5, 2026-11-18): `inference/drift.py` (torch-free), `evaluation/{drift_curves,drift_monitor}.py`; three seeds, both threshold modes. Class-prior KL and next-packet NLL track the weekly macro-F1 (Spearman about -0.9); mean K and reject rate do not; every run warns within the horizon, but no signal warns before a 3-point drop without also firing early in the test weeks. Adaptation (stretch) not built; dashboard panel is phase 6. See `docs/results-phase-5.md`.
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 14 of 18
@@ -101,3 +101,11 @@ Build plan (forward draft): [`plans/phase-5-drift-efficiency.md`](../plans/phase
 ## Open questions
 
 - Whether the refresh is worth its GPU cost in the final weeks; decide after phase 3 results.
+
+## Corrections made during phase 5 (2026-11-18)
+
+- **C11.** `npp_ppl` is implemented as the mean next-packet negative log-likelihood over the packets read (`mean_pkt_nll`); perplexity is its exponential and adds nothing. `prior_kl` adds 1e-3 to each class *frequency* (not count) before renormalising, both for the window and for the validation histogram.
+- **C12.** Two signal sets. With a static threshold all six signals are watched; with the budget controller running `mean_k` and `commit_rate` are informational and `theta_commit` itself is watched.
+- **C13.** The CUSUM threshold `h` is the smallest value from 5.0 (steps of 0.5) at which validation windows give no alarm; the warm-up is 5 windows; a window is 5,000 decided flows.
+- **C14.** Adaptation (stretch) is not built (roadmap DP-5a); the canary-accuracy alert (moved here from spec 011) is not built either. Both are in `docs/future-work.md`.
+- **C15.** The offline validation cannot measure a false-alarm rate: there is no stationary stretch of labelled data, and the `test_id` weeks already differ slightly from validation. The results document reports sensitivity only.

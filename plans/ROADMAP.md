@@ -16,8 +16,8 @@ AnytimeETC classifies encrypted network flows from packet sizes, directions and 
 | 2 Tracking, Kaggle, baselines | 014, 015, 005 | done (two minor exit items left open, see the plan) | [phase-2](phase-2-tracking-kaggle-baselines.md) |
 | 3 PAT, SSL, prefix training | 006–008 | done; three seeds for the headline comparison; H1 partly supported, H5 not supported | [phase-3](phase-3-pat-ssl-prefix-training.md), [results](../docs/results-phase-3.md) |
 | 4 Unknown, stopping, budget | 010, 009, 011 | done; three seeds; H3 AUROC bars met, early-rejection not met; H2 not met against P-ECHO / P-RL; H4 holds the budget | [phase-4](phase-4-unknown-stopping-budget.md), [results](../docs/results-phase-4.md) |
-| **5 Drift and efficiency** | 012, 013, rest of 004 | **next** | [phase-5](phase-5-drift-efficiency.md) |
-| 6 Service, dashboard, demo | 018, 016, 017 | planned | [phase-6](phase-6-service-dashboard-demo.md) |
+| 5 Drift and efficiency | 012, 013, rest of 004 | done; decay measured, two label-free signals track it, streaming step misses 1 ms | [phase-5](phase-5-drift-efficiency.md), [results](../docs/results-phase-5.md) |
+| **6 Service, dashboard, demo** | 018, 016, 017 | **next** | [phase-6](phase-6-service-dashboard-demo.md) |
 | 7 Report and paper | (new spec 021) | planned | [phase-7](phase-7-report-paper.md) |
 
 The plans for phases 5 to 7 were drafted ahead of time on 2026-11-17 at the owner's request. `specs/README.md` says to write a plan just before its phase; treat those three as starting drafts and re-check them against real results when each phase begins.

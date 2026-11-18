@@ -1,0 +1,57 @@
+{
+  "004": [
+    {
+      "bar": ">= 3 models",
+      "criterion": "weekly decay curves, models with three seeds",
+      "met": true,
+      "value": 3.0
+    }
+  ],
+  "012": [
+    {
+      "bar": "== 3",
+      "criterion": "static: the combined monitor raises a warning or alarm within the horizon (seeds that do)",
+      "met": true,
+      "value": 3.0
+    },
+    {
+      "bar": "== 3",
+      "criterion": "controller: the combined monitor raises a warning or alarm within the horizon (seeds that do)",
+      "met": true,
+      "value": 3.0
+    },
+    {
+      "bar": "reported, no bar",
+      "criterion": "strongest Spearman correlation with weekly macro-F1 (prior_kl), reported",
+      "met": null,
+      "value": -0.8961038961038962
+    },
+    {
+      "bar": "reported, no bar",
+      "criterion": "class-prior KL: weeks between its first alarm and the first week 3 macro-F1 points below the test weeks (positive = alarm first)",
+      "met": null,
+      "value": -0.6666666666666666
+    }
+  ],
+  "013": [
+    {
+      "bar": "<= 1.0",
+      "criterion": "PAT streaming step, median, batch 1, CPU, ms",
+      "met": false,
+      "value": 1.6518499905942008
+    },
+    {
+      "bar": "<= 5.0",
+      "criterion": "PAT full-flow latency, median, batch 1, CPU, ms",
+      "met": true,
+      "value": 2.48695001937449
+    },
+    {
+      "bar": "< 2,000,000",
+      "criterion": "PAT parameters",
+      "met": true,
+      "value": 885821.0
+    }
+  ],
+  "headline": "ft-pat-ssl_tuned-d1open"
+}
