@@ -167,7 +167,14 @@ def test_the_committed_kaggle_queue_is_valid_open_set_and_distinct() -> None:
 
     names = []
     evals = []
+    scores = []
     for entry in queue:
+        if "score" in entry:  # plan phase 4: scores a run for H2/H3/H4, trains nothing
+            cfg = load_config(repo / entry["score"], list(entry.get("overrides", [])))
+            assert cfg.device == "cuda"
+            assert set(entry) <= {"score", "run", "overrides", "results_root", "out_root"}
+            scores.append(str(entry["run"]))
+            continue
         if "eval" in entry:  # plan phase 3 T8: evaluates a run, trains nothing
             cfg = load_config(repo / entry["eval"], list(entry.get("overrides", [])))
             assert cfg.split == "configs/splits/d1_open.yaml" and cfg.device == "cuda"
@@ -180,6 +187,7 @@ def test_the_committed_kaggle_queue_is_valid_open_set_and_distinct() -> None:
                                    int(cfg.seed)))  # fmt: skip
     assert len(set(names)) == len(names)
     assert len(set(evals)) == len(evals), "the same run evaluated twice"
+    assert len(set(scores)) == len(scores), "the same run scored twice"
 
 
 @pytest.mark.parametrize(
