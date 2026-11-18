@@ -58,6 +58,18 @@ Hardware documented per run: Kaggle T4/P100 for GPU numbers, the owner's laptop 
 
 - PAT streaming step latency <= 1 ms on CPU (batch 1) and full-flow CPU latency <= 5 ms; parameter count < 2M; efficiency table complete for all baselines and policies.
 
+## Pre-build notes (added 2026-11-17)
+
+Build plan (forward draft): [`plans/phase-5-drift-efficiency.md`](../plans/phase-5-drift-efficiency.md), task T3.
+
+- **Modules:** `src/adl_etc/evaluation/efficiency.py` (torch imported inside functions, as in `plotstyle.py`), `scripts/benchmark.py`, `configs/eval/efficiency.yaml`.
+- **GPU throughput is not re-measured.** The Kaggle T4 numbers recorded in spec 015 are reused: B5 ~13,400 flows/s, prefix fine-tuning ~11,600, SSL ~5,750, GRU ~43,000.
+- **ONNX Runtime is optional**, time-boxed to half a day. The PAT writes its attention out by hand for deterministic gradients, so an export may need work. Eager PyTorch numbers are the required ones.
+- **Parameter count is already known:** 885,821 for the PAT.
+- **Policy cost comes from phase 4's replay**, not from a model run: packets-to-decision from `ReplayResult.k`; time-to-decision from the shards' inter-packet times, looked up by `flow_index`.
+- **The non-causal streaming cost** is reported for B2 (the CNN): one full pass per packet. 30pktTCNET is included only if phase 7 loads its public weights.
+- **"Mean layers evaluated" and "compute per flow"** are dropped with depth exits (spec 011's correction).
+
 ## Open questions
 
 - Whether to include int8 ONNX quantisation results in the paper (default: appendix only).

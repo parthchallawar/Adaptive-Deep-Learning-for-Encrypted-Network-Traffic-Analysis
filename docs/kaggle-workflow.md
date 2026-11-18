@@ -157,6 +157,42 @@ kernel is running, its earlier versions' output cannot be listed or pulled.
 `kaggle kernels logs <slug>` prints nothing for a running session; add `-f`
 to stream it.
 
+## Score entries (plan phase 4)
+
+A third queue entry type scores an already-trained run and builds its H3/H2/H4 report:
+
+```yaml
+- score: configs/eval/d1_open_scores.yaml
+  run: ft-pat-ssl_tuned-d1open-s0
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+```
+
+The run is found like an eval entry's (this session's `results/`, or any mounted output, the slim
+checkpoint dataset included). Output goes to `results/scores/<run>/`. The per-prefix score files
+(`eval/<split>/scores/`, about 1 GB a run) are large and **should stay on Kaggle**: pull only
+`eval/phase4.json` and `unknown.{npz,json}` (about a megabyte), with
+`kaggle kernels output <slug> -p <dir> --file-pattern 'phase4\.json$|unknown\.(npz|json)$'`.
+If you later need the scores themselves (a new ablation), pull `eval/val/scores` and
+`eval/test_id/scores` only (about 0.4 GB a run). An entry whose score files for every configured
+split and whose report already exist is skipped, so a re-pushed session resumes.
+
+## Pulling a file from an older kernel version
+
+`kaggle kernels output <owner>/<slug>/<version>` parses the version and then drops it, so it
+always returns the **latest** version's files, and the API's listing endpoints return 404 for any
+explicit version. That made an older version's checkpoints look lost once a newer version existed
+(2026-11-17, phase 4 T0). The download request does take a version number, so name the files:
+
+```
+python scripts/kaggle_pull_version.py parthchallawar/adl-encrypted-traffic-train 16 \
+    results/<run>/best.pt --out results/<where>
+```
+
+Run it with the Python that has the `kaggle` package (the project `.venv` does not). Verify what
+you pull (for a PAT checkpoint, its SHA-256 must equal `checkpoint_hash` in the run's
+`calibration.json`). `push-checkpoints` is the durable fix: it rebuilds the checkpoint dataset
+from **exactly** the runs named, so always name every run you want kept.
+
 ## Results: Kaggle → results/
 
 Once the kernel finishes running on Kaggle, pull its output down:

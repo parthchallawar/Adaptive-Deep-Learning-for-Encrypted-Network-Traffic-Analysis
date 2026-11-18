@@ -1,0 +1,30 @@
+# Score passes for phase 4 (plan phase 4, T1-T2; evaluation/score_run.py). One run, three splits.
+#   python -m adl_etc.evaluation.score_run --config configs/eval/d1_open_scores.yaml \
+#     --override run_dir=results/kaggle-p3-s4/results/ft-pat-ssl_tuned-d1open-s1
+#
+# val and test_id use the same whole-split draw as phase 3's evaluations (250k flows, seed 0), so
+# every score lines up flow for flow with that run's predictions.npz. test_drift is sampled per
+# week so each of the 16 drift weeks has the same weight.
+split: configs/splits/d1_open.yaml
+data_root: results/kaggle-full/shards
+standardizer: results/standardizer.json
+
+run_dir: null         # required: a training run directory (config_resolved.yaml, best.pt, ...)
+out_dir: null         # default: the run directory; scores go to <out_dir>/eval/<split>/scores/
+seed: 0
+device: cpu
+batch_size: 1024
+
+splits:
+  val: {cap: 250000}
+  test_id: {cap: 250000}
+  test_drift: {per_period: 50000}
+
+# Spec 010. The Gaussian bank is fitted on a per-class sample of KNOWN training flows; the
+# z-statistics and quantile thresholds on KNOWN validation flows only (never unknown-class ones).
+unknown:
+  enabled: true
+  per_class: 1500
+  min_class_flows: 50
+  shrinkage: 0.1
+  weights: [1.0, 1.0, 0.5]   # energy, Mahalanobis, surprise (beta = 0.5)

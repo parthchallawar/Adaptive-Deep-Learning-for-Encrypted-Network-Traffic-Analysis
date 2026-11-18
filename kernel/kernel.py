@@ -23,6 +23,10 @@ no Kaggle mount needed -- the same code (``training.run.run_training``,
 ``training.loop.fit``, the real ``RNNBaseline``) on fake data, so ``pytest``
 can prove the whole pipeline runs before any Kaggle GPU hour is spent on it.
 The default, ``queue``, is the real run.
+
+A queue entry is a training entry (``config:``), an evaluation entry (``eval:``, phase 3: robustness
+on a trained run) or a score entry (``score:``, phase 4: the per-prefix score files and the
+H3/H2/H4 report for a trained run; see :func:`run_score_entry`).
 """
 
 from __future__ import annotations
@@ -320,6 +324,91 @@ def run_eval_entry(
     return {"eval": run_name, "status": "finished", "run_dir": str(run_dir), "out": str(out_dir)}
 
 
+def run_score_entry(
+    entry: dict[str, Any],
+    *,
+    tag: str,
+    code_root: Path,
+    previous: dict[str, Path],
+    resolve_split: Callable[[str], Path],
+    shard_root: Path,
+    std_path: Path,
+    deadline: float,
+) -> dict[str, Any] | None:
+    """One ``{score: <score config>, run: <run name>, overrides: [...]}`` queue entry (plan
+    phase 4, T1/T2/T6): ``evaluation.score_run`` on an already-trained run (found like an eval
+    entry's: this session's ``results/`` or any mounted previous output, a slim checkpoint dataset
+    included), then ``evaluation.phase4.report_for_run`` over what it wrote.
+
+    The big score files (~1 GB a run) stay in ``<out_root>/<run>/eval/<split>/scores/``; only
+    ``<out_root>/<run>/eval/phase4.json`` (small) and the unknown model need pulling to analyse
+    locally -- Kaggle downloads ran at ~0.6-3 MB/s, so pulling every score file would take hours.
+    An entry whose score files for every configured split and whose report already exist is
+    skipped. Returns ``None`` when too little time is left to start, as for training."""
+    from adl_etc.evaluation.phase4 import report_for_run
+    from adl_etc.evaluation.score_run import main as score
+    from adl_etc.utils.atomic import atomic_write_json
+    from adl_etc.utils.config import load_config
+
+    run_name = str(entry["run"])
+    cfg_path = code_root / str(entry["score"])
+    extra = [str(o) for o in entry.get("overrides", [])]
+    cfg = load_config(cfg_path, overrides=extra)  # a bad override fails here, not mid-pass
+
+    local = Path(str(entry.get("results_root", "results"))) / run_name
+    if (local / "best.pt").is_file():
+        run_dir = local
+    elif run_name in previous and (previous[run_name] / "best.pt").is_file():
+        run_dir = previous[run_name]
+    else:
+        log(f"{tag}: no run directory {run_name!r} with a best.pt here or mounted, skipping")
+        return {"score": run_name, "status": "missing_run"}
+
+    out_dir = Path(str(entry.get("out_root", "results/scores"))) / run_name
+    report_path = out_dir / "eval" / "phase4.json"
+    splits = list(cfg.splits.keys())
+    if report_path.is_file() and all(
+        (out_dir / "eval" / s / "scores" / "scores.json").is_file() for s in splits
+    ):
+        log(f"{tag}: already scored and reported, skipping")
+        return {"score": run_name, "status": "already_finished", "out": str(out_dir)}
+
+    remaining = deadline - time.monotonic()
+    if remaining < QUEUE_STOP_MARGIN_SECONDS:
+        log(f"{tag}: only {remaining / 60:.0f} min left in the session, stopping the queue")
+        return None
+
+    log(f"{tag}: scoring {run_dir} ({remaining / 3600:.2f} h left)")
+    t0 = time.monotonic()
+    score(
+        [
+            "--config",
+            str(cfg_path),
+            "--override",
+            *extra,
+            f"run_dir={run_dir.as_posix()}",
+            f"out_dir={out_dir.as_posix()}",
+            f"split={resolve_split(str(cfg.split))}",
+            f"data_root={shard_root}",
+            f"standardizer={std_path}",
+        ]
+    )
+    scored = (time.monotonic() - t0) / 60
+    log(f"{tag}: scored in {scored:.1f} min; building the H3/H2/H4 report")
+    report = report_for_run(out_dir, run_dir / "label_space.json")
+    atomic_write_json(report_path, report)
+    minutes = (time.monotonic() - t0) / 60
+    log(f"{tag}: finished in {minutes:.1f} min -> {report_path}")
+    return {
+        "score": run_name,
+        "status": "finished",
+        "run_dir": str(run_dir),
+        "out": str(out_dir),
+        "heads": report["meta"]["heads"],
+        "minutes": round(minutes, 1),
+    }
+
+
 def run_queue(deadline: float) -> None:
     # add_code_to_path() must run before any `adl_etc` import: on the real
     # Kaggle image nothing has installed this package, so `sys.path` only
@@ -357,6 +446,22 @@ def run_queue(deadline: float) -> None:
         return resolved_splits[split_rel]
 
     for i, entry in enumerate(entries):
+        if "score" in entry:
+            outcome = run_score_entry(
+                entry,
+                tag=f"[{i + 1}/{len(entries)}] score {entry.get('run')}",
+                code_root=code_root,
+                previous=previous,
+                resolve_split=resolve_split,
+                shard_root=shard_root,
+                std_path=std_path,
+                deadline=deadline,
+            )
+            if outcome is None:  # out of time: stop starting new work, as for training
+                break
+            results.append(outcome)
+            continue
+
         if "eval" in entry:
             outcome = run_eval_entry(
                 entry,
@@ -478,9 +583,7 @@ def _build_smoke_split(root: Path, *, n_train: int, n_val: int, seed: int) -> tu
 
     shard_root = root / "shards"
     _write_smoke_shards(shard_root, _make_smoke_flows(n_train, seed), name="smoke", period="train")
-    _write_smoke_shards(
-        shard_root, _make_smoke_flows(n_val, seed + 1), name="smoke", period="val"
-    )
+    _write_smoke_shards(shard_root, _make_smoke_flows(n_val, seed + 1), name="smoke", period="val")
 
     train_ss = ShardSet.open(shard_root / "smoke" / "train")
     try:

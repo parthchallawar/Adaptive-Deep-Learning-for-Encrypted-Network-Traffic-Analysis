@@ -63,6 +63,17 @@ The synopsis promises results "presented through an interactive dashboard". The 
 
 - A five-minute demo script (in `docs/demo.md`) can be executed on the laptop: upload pcap → watch decisions → change budget → see mean K move → view unknown alerts → open experiment tables.
 
+## Pre-build notes (added 2026-11-17)
+
+Build plan (forward draft): [`plans/phase-6-service-dashboard-demo.md`](../plans/phase-6-service-dashboard-demo.md), tasks T3 and T4. Where these disagree with the design above, they win.
+
+- **Paths.** The package is `src/adl_etc/dashboard/` (`app.py`, `pages/`, `client.py`), not `src/dashboard/`. Shared figures come from `adl_etc.evaluation.plotstyle`, not `src/evaluation/plots.py`.
+- **S6. Polling, not a socket thread.** The dashboard polls `GET /flows?since=` and `GET /stats` once a second. A background WebSocket thread inside Streamlit's rerun model is fragile.
+- **S7. One plotting path.** Offline figures reuse `plotstyle`'s matplotlib functions through `st.pyplot`; live charts use Streamlit's built-in charts. Plotly is not added.
+- **S8. The Experiments page reads files**, not MLflow: `results/summaries/*.md` and each run's `report.json`. The MLflow UI already exists for browsing runs.
+- **Build order, most valuable first:** Monitor, Budget, Flow inspector, Unknown, then Drift, Experiments, Model & system. The first four are enough for the demo.
+- **The Monitor page starts a shard replay** (spec 016's `POST /ingest/shards`) as its main action; PCAP upload is second; live capture is absent.
+
 ## Open questions
 
 - Whether to embed the report's LaTeX table export here (default: no, `scripts/make_tables.py` does it).

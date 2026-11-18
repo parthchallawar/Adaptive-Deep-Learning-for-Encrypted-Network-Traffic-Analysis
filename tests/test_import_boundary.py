@@ -1,11 +1,13 @@
 """Phase 1's torch-free core stays torch-free (plan phase 2, "What this phase
 inherits").
 
-Nothing under ``adl_etc.data``, ``adl_etc.evaluation`` or ``adl_etc.utils`` may
-import torch or mlflow just by being imported: the exporters and the metric
-suite must keep installing and running in seconds, and a Kaggle kernel has no
-mlflow. Run in a fresh interpreter so an earlier test that imported either one
-cannot mask a regression.
+Nothing under ``adl_etc.data``, ``adl_etc.evaluation``, ``adl_etc.inference`` or
+``adl_etc.utils`` may import torch or mlflow just by being imported: the exporters
+and the metric suite must keep installing and running in seconds, and a Kaggle
+kernel has no mlflow. ``adl_etc.inference`` holds the decision rule, the unknown
+scorer and the controller that offline evaluation and the service both import
+(plan phase 4, decision D2), so it must stay torch-free too. Run in a fresh
+interpreter so an earlier test that imported either one cannot mask a regression.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import adl_etc
 
 heavy = ("torch", "mlflow")
 checked, leaks = 0, {}
-for pkg_name in ("adl_etc.data", "adl_etc.evaluation", "adl_etc.utils"):
+for pkg_name in ("adl_etc.data", "adl_etc.evaluation", "adl_etc.inference", "adl_etc.utils"):
     pkg = importlib.import_module(pkg_name)
     for info in pkgutil.walk_packages(pkg.__path__, prefix=pkg_name + "."):
         importlib.import_module(info.name)

@@ -1,66 +1,55 @@
-# Kaggle training queue (spec 015). kernel/kernel.py works through this in order and
-# stops issuing new entries once under 40 minutes remain in the session. An entry whose
-# run is already finished -- in this session, or restored from the previous session's
-# mounted output (plan phase 3 T2, docs/kaggle-workflow.md) -- is skipped; a paused one
-# continues. Each entry trains on the split its own config names (d1_open.yaml).
-# `eval:` entries evaluate an already-trained run (plan phase 3 T8): output goes to
-# results/robust/<run>/eval/test_id/.
+# Kaggle queue (spec 015). kernel/kernel.py works through this in order and stops issuing new
+# entries once under 40 minutes remain in the session. An entry whose work is already finished
+# -- in this session, or restored from a previous session's mounted output -- is skipped.
 #
-# `split`/`data_root`/`standardizer` are set by kernel.py itself (the paths its mounted
-# datasets resolve to); do not set them here.
+# `split`/`data_root`/`standardizer`/`run_dir`/`out_dir` are set by kernel.py itself (the paths its
+# mounted datasets resolve to); do not set them here.
 #
-# PHASE 3, SESSION 4 (~6.5 GPU-hours; Session 3 = kernel v16, 2026-11-15, 2h28m).
-# Seeds 1 and 2 for the recommended recipe and its strongest baseline, so the phase-3
-# headline numbers are mean +/- std over three seeds and the paired bootstrap has
-# per-flow predictions. Measured in Sessions 2-3 on one T4: a tuned PAT ~1 h, the GRU
-# ~40 min, a robustness eval ~5 min.
-# Mounts: this kernel's own latest output (v16: the SSL pretraining run, restored there
-# from v15, and the tuned pair's seed 0) and the slim checkpoint dataset (B3's seed 0,
-# which only v15 holds; B5).
-#   0. SSL pretraining (restored from v16, skipped; supplies init_from)
-#   1. Seed 1, then seed 2: tuned scratch, tuned SSL, B3 GRU. Seed by seed, so a
-#      session cut short still leaves complete seeds.
-#   2. Robustness on test_id for all nine runs. Seed 0 is evaluated again because
-#      Session 3's evaluations predate predictions.npz; same flows and damage (eval
-#      seed 0), so its reports reproduce Session 3's.
-- config: configs/train/pt_pat_npp_pfc_d1.yaml
-  overrides: ["seed=0", "device=cuda", "train.epochs=8"]
-- config: configs/train/ft_pat_d1_tuned.yaml
-  overrides: ["seed=1", "device=cuda"]
-- config: configs/train/ft_pat_ssl_d1_tuned.yaml
-  overrides: ["seed=1", "device=cuda", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
-- config: configs/train/b3_gru_d1.yaml
-  overrides: ["seed=1", "device=cuda", "split=configs/splits/d1_open.yaml", "split_name=d1open"]
-- config: configs/train/ft_pat_d1_tuned.yaml
-  overrides: ["seed=2", "device=cuda"]
-- config: configs/train/ft_pat_ssl_d1_tuned.yaml
-  overrides: ["seed=2", "device=cuda", "init_from=results/pt-pat_pretrain-npp_pfc-d1open-s0/best.pt"]
-- config: configs/train/b3_gru_d1.yaml
-  overrides: ["seed=2", "device=cuda", "split=configs/splits/d1_open.yaml", "split_name=d1open"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: ft-pat-ssl_tuned-d1open-s1
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: ft-pat-tuned-d1open-s1
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: bl-gru-main-d1open-s1
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: ft-pat-ssl_tuned-d1open-s2
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: ft-pat-tuned-d1open-s2
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
-  run: bl-gru-main-d1open-s2
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
+# PHASE 4, SESSION 5: score passes and the H3/H2/H4 reports. No training in this session.
+# (Phase 3's Session 4 queue -- seeds 1 and 2 of the tuned pair and B3 -- is in git history.)
+#
+# A `score:` entry (plan phase 4, T1/T2/T6; kernel.run_score_entry) runs
+# `adl_etc.evaluation.score_run` on an already-trained run and then builds its
+# H3/H2/H4 report (`evaluation.phase4.report_for_run`). Output goes to
+# results/scores/<run>/: the big per-prefix score files under eval/<split>/scores/ (~1 GB a run,
+# leave them on Kaggle) and the small files to pull: eval/phase4.json and unknown.{npz,json}.
+#
+# The nine headline runs come from the slim checkpoint dataset
+# (parthchallawar/adl-encrypted-traffic-checkpoints, listed in dataset_sources), which holds
+# best.pt, config_resolved.yaml, label_space.json, calibration.json and state.json for each.
+# Headline model first (the tuned SSL PAT), then its from-scratch twin (H1's packets-to-decision
+# comparison), then the GRU baseline (closed-world policy comparison only: it has no projection
+# head, so no unknown model). Seed by seed within each model, so a session cut short still
+# leaves complete seeds.
+#
+# Sizes (set to keep the whole session near 4-5 h, estimated from CPU measurements, not yet
+# measured on a T4): 250k flows each for val and test_id (the same draw phase 3's evaluations
+# used), 20k per week for the 18 drift weeks, and a Gaussian bank from 1,500 known training
+# flows per class. Per PAT run roughly 1.0M flows scored.
+- score: configs/eval/d1_open_scores.yaml
   run: ft-pat-ssl_tuned-d1open-s0
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: ft-pat-ssl_tuned-d1open-s1
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: ft-pat-ssl_tuned-d1open-s2
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
   run: ft-pat-tuned-d1open-s0
-  overrides: ["device=cuda"]
-- eval: configs/eval/d1_open_robust.yaml
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: ft-pat-tuned-d1open-s1
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: ft-pat-tuned-d1open-s2
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
   run: bl-gru-main-d1open-s0
-  overrides: ["device=cuda"]
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: bl-gru-main-d1open-s1
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]
+- score: configs/eval/d1_open_scores.yaml
+  run: bl-gru-main-d1open-s2
+  overrides: ["device=cuda", "batch_size=2048", "splits.test_drift.per_period=20000"]

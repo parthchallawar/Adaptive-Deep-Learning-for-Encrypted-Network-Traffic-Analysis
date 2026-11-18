@@ -79,6 +79,19 @@ Decision event schema is the same dataclass used by the offline replay (spec 009
 
 - Live demo end-to-end on the owner's laptop; decisions for browsing flows within the first 10 payload packets; budget knob visibly changes mean K; unknown alerts for a flow type not in training.
 
+## Pre-build notes (added 2026-11-17)
+
+Build plan (forward draft): [`plans/phase-6-service-dashboard-demo.md`](../plans/phase-6-service-dashboard-demo.md), task T2. These simplify the design above for a one-laptop demonstration; where they disagree with it, they win.
+
+- **S1. No live capture.** `/ingest/live/start` and `/ingest/live/stop` return `501 Not Implemented`. Npcap is not installed and live capture has been deferred since phase 1.
+- **S2. No MLflow registry.** The model bundle is a local run directory named in `results/models/production.json`: `best.pt`, `calibration.json`, `unknown.npz`, `label_space.json`. `/model` reads and reloads that.
+- **S3. Version 1 recomputes the prefix.** When a flow receives a packet, the full PAT forward runs on its current prefix. The model is causal and stream-equivalence is tested, so the outputs equal `PATStream.step`'s, with no cache-eviction logic. Move to batched `PATStream` only if the throughput target is missed.
+- **New endpoint `POST /ingest/shards` `{period, count, speed}`.** D1 has no PCAPs, so replaying stored PPI from `test_id` / `test_drift` is the only way to show in-distribution traffic, real unknown-class flows and real drift. This is the main demo source; PCAP upload is the second.
+- **New endpoint `GET /stats?window_s=`** returning the aggregates the dashboard polls (flows/s, mean K, commit and reject rates).
+- **S9. Bind to `127.0.0.1`; no API key.**
+- **Shared code:** the rule, unknown scorer, controller and monitor are imported from `src/adl_etc/inference/` (torch-free, built in phases 4 and 5). The `Decision` dataclass is the one in `inference/policy.py`.
+- **Dependencies:** the `service` extra gains fastapi, uvicorn, sqlalchemy, pydantic, streamlit, python-multipart and httpx.
+
 ## Open questions
 
 - WebSocket vs. server-sent events for the dashboard (default: WebSocket).
