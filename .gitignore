@@ -46,3 +46,8 @@ Thumbs.db
 .env
 .env.*
 .kaggle-ckpt/
+
+# Local traffic captures (private: your own network traffic)
+captures/
+*.pcap
+*.pcapng

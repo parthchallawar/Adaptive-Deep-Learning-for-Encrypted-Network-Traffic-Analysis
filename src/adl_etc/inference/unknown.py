@@ -148,15 +148,31 @@ class GaussianBank:
         x = np.asarray(proj, dtype=np.float64)
         out = np.zeros(x.shape[:2])
         for k in range(K_MAX):
-            cv = self.valid[k]
-            if not cv.any():
-                continue
-            xk, p, mu = x[:, k], self.precision[k], self.means[k][cv]
-            xp = xk @ p
-            d = (xp * xk).sum(1)[:, None] - 2.0 * (xp @ mu.T) + ((mu @ p) * mu).sum(1)[None, :]
-            xb = xk - self.bg_mean[k]
-            out[:, k] = d.min(1) - ((xb @ self.bg_precision[k]) * xb).sum(1)
+            out[:, k] = self._mahal_k(x[:, k], k)
         return out
+
+    def mahal_at(self, proj: np.ndarray, k_index: np.ndarray) -> np.ndarray:
+        """``M`` for one position per row: ``proj`` ``[N, d]`` is row ``i``'s projection at
+        position ``k_index[i]`` (0-based). The service scores only the positions a flow has
+        just reached, and this gives exactly :meth:`mahal`'s value there."""
+        x = np.asarray(proj, dtype=np.float64)
+        k_index = np.asarray(k_index, dtype=np.int64)
+        out = np.zeros(len(x))
+        for k in np.unique(k_index):
+            rows = k_index == k
+            out[rows] = self._mahal_k(x[rows], int(k))
+        return out
+
+    def _mahal_k(self, xk: np.ndarray, k: int) -> np.ndarray:
+        """The one definition of ``M_k`` for rows ``xk`` ``[n, d]`` at 0-based position ``k``."""
+        cv = self.valid[k]
+        if not cv.any():
+            return np.zeros(len(xk))
+        p, mu = self.precision[k], self.means[k][cv]
+        xp = xk @ p
+        d = (xp * xk).sum(1)[:, None] - 2.0 * (xp @ mu.T) + ((mu @ p) * mu).sum(1)[None, :]
+        xb = xk - self.bg_mean[k]
+        return d.min(1) - ((xb @ self.bg_precision[k]) * xb).sum(1)
 
     def to_arrays(self) -> dict[str, np.ndarray]:
         return {
@@ -199,6 +215,22 @@ class UnknownModel:
 
     def score_of(self, s: ScoreArrays) -> np.ndarray:
         return self.score(s.energy, s.mahal, s.surprise)
+
+    def score_at(
+        self,
+        energy: np.ndarray,
+        mahal: np.ndarray,
+        surprise: np.ndarray,
+        k_index: np.ndarray,
+    ) -> np.ndarray:
+        """``u`` for one position per row (all ``[N]``; ``k_index`` 0-based): the same value
+        :meth:`score` gives at that position."""
+        k_index = np.asarray(k_index, dtype=np.int64)
+        raw = np.stack(
+            [np.asarray(a, dtype=np.float64) for a in (energy, mahal, surprise)], axis=-1
+        )
+        z = (raw - self.z_mean[k_index]) / self.z_std[k_index]
+        return z @ np.asarray(self.weights, dtype=np.float64)
 
     def theta_reject(self, f: float) -> np.ndarray:
         """Per-K threshold, ``[30]``: the ``1 - f`` quantile of ``u_k`` over known

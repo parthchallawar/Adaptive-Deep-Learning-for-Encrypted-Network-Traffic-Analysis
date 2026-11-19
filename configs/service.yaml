@@ -1,0 +1,42 @@
+# Spec 016's service config (plan phase 6, T2). Loaded with utils.config.load_config, so an
+# unknown key raises. Override any value on the command line:
+#   python -m adl_etc.service --override db_url=sqlite:///results/service/demo2.db
+
+host: 127.0.0.1            # S9: local only, no API key
+port: 8000
+# One database file per demo run is the safe default on Windows (plan T4 checklist).
+db_url: sqlite:///results/service/service.db
+production: results/models/production.json   # S2: the model bundle, not an MLflow registry
+data_root: results/kaggle-full/shards          # where shard replay reads D1 weeks from
+split: configs/splits/d1_open.yaml             # names the known / unknown classes
+torch_threads: 2                               # measured fastest on this laptop's CPU
+
+engine:
+  max_batch: 64            # micro-batch: drain the queue every 5 ms or 64 events
+  max_wait_ms: 5
+  idle_timeout_s: 60       # evict an undecided flow after this much silence (forced decision)
+  max_flows: 50000         # concurrent flows; beyond this new flows are dropped and counted
+  queue_limit: 100000      # back-pressure: sources pause above this many queued events
+  order: reject_first      # spec 009 check order (phase 4: the safer open-world order)
+  k_min: 2
+  k_ood: 3
+  trace: true              # store per-K p_safe / u / class for the flow inspector
+
+budget:
+  mode: auto               # auto | manual | quality_first
+  metric: mean_k           # mean_k | p95_k
+  target: 6.0              # B*: packets per flow
+  window: 500              # decisions per controller window (phase 4 replayed 2,000)
+  min_flows: 200
+  kp: 3.0                  # phase 4 chose kp = 3, ki = 0 on validation for every run
+  ki: 0.0
+  i_max: 1.0
+  theta_min: 0.5
+  theta_max: 0.999
+  quality_theta: 0.98      # theta_commit held in quality_first mode
+  f: 0.02                  # unknown score's false-positive target (phase 4/5 used 0.02)
+
+drift:
+  window: 5000             # decided flows per monitor window (phase 5's window)
+  warmup: 5
+  span: 3

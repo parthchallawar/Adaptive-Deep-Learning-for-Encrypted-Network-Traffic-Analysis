@@ -1,7 +1,7 @@
 # Plan: Phase 6 — database, inference service, dashboard, demo
 
 - **Specs:** `specs/018-storage-and-database.md`, `specs/016-inference-service-api.md`, `specs/017-dashboard.md` (build steps 16, 17, 18)
-- **Status:** not-started. **Forward draft**, written 2026-11-17. Re-check against phases 4 and 5 before starting.
+- **Status:** built 2026-11-18 on branch `phase6` (T1-T5). Exit criterion 2 (the demo run twice end to end by the owner) is open; see "Exit criteria". Forward draft written 2026-11-17, re-checked against phases 4 and 5 at the start.
 - **Starts when:** phase 5's exit criteria hold (the service can start after phase 4 if time is short; the drift page then waits).
 - **Roadmap:** [`ROADMAP.md`](ROADMAP.md).
 
@@ -22,6 +22,7 @@ Turn the research code into something that can be shown: flows go in, early deci
 | S7 | 017: Plotly, `src/evaluation/plots.py` | Offline figures reuse `adl_etc.evaluation.plotstyle` (matplotlib, `st.pyplot`); live charts use Streamlit's built-in charts | One plotting code path for the report and the dashboard, which is what the spec wants |
 | S8 | 017: Experiments page queries MLflow | It reads `results/summaries/*.md` and each run's `report.json` | The MLflow UI already exists for browsing; the page only needs the final tables |
 | S9 | 016: static API key | Bind to `127.0.0.1` only; no key | Local demo |
+| S10 | 017: Streamlit app (and this plan's T3 file list) | **Added 2026-11-18.** A static web UI (`src/adl_etc/dashboard/web/`: HTML, CSS, JS, no build step, no CDN script) served by the service itself at `/`. It is one page: a story of the project, then the console with the seven planned pages at `/#console/<page>`. Streamlit and Plotly are not used | The owner asked for a designed, cinematic web experience that Streamlit cannot give. One process instead of two also removes the service-then-dashboard start order and a second port. The API is unchanged, so a Streamlit client could still be added |
 
 ## Architecture
 
@@ -63,7 +64,7 @@ Tests (spec 016's list): for a fixture PCAP, the service's decisions equal offli
 
 ### T3 — Dashboard (spec 017)
 
-`src/adl_etc/dashboard/{app.py, pages/*.py, client.py}`, tests with `streamlit.testing.v1.AppTest` against a stub client.
+`src/adl_etc/dashboard/web/` (correction S10; the original plan was `{app.py, pages/*.py, client.py}` with `streamlit.testing.v1.AppTest`).
 
 Build in this order; stop after page 4 if time is short:
 
@@ -105,10 +106,18 @@ A rehearsal checklist: start order (service, then dashboard), ports, what to do 
 
 ## Exit criteria
 
-1. `pytest` (including `tests/service/`), `ruff`, `mypy` clean.
-2. The demo script has been run start to finish twice on the laptop.
-3. Corrections landed; index files updated.
+1. `pytest` (including `tests/service/`), `ruff`, `mypy` clean. **Met 2026-11-18.**
+2. The demo script has been run start to finish twice on the laptop. **Open**: every step was exercised against the running service while building (replays of weeks 31 and 50, budget changes, drift windows, the inspector), but a timed run-through by the owner has not happened.
+3. Corrections landed; index files updated. **Met 2026-11-18.**
 
 ## Progress log
 
+- **2026-11-18. Built (T1-T5), on branch `phase6`.**
+  - **T1 database** (`service/db/{models,store}.py`, `service/privacy.py`, `scripts/db_init.py`): every table, the queued writer, WAL, the version guard, the salted key hash. `tests/service/test_db.py`: 50,000 decisions through the queue well under 10 s; a reader sees rows while the writer runs; a version mismatch raises. The 1M-row test first failed (stats 1.6 s, strip chart 3.7 s: a `decision != 'undecidable'` filter sent SQLite to the wrong index) and passes after a covering index and engine-side totals: slowest query 75 ms.
+  - **T2 service** (`service/{engine,ingest,bundle,app,schemas,__main__}.py`, `configs/service.yaml`, `scripts/make_production_bundle.py`). The engine is torch-free; the model sits behind a `Scorer` (`bundle.ModelBundle`; tests use a causal stub). Streamed decisions equal `replay.safe_stop` flow for flow on 1,200 interleaved stub flows, both check orders, and on a fixture PCAP with a handshake-only flow (stored `undecidable`); with the **real model, 0 of 400 `test_id` flows differ** from `score_flows` + `safe_stop` (`test_bundle.py`, slow). Model reload moves only new flows; a lower budget lowers `theta_commit` after replayed traffic (both tested). Two shared-code additions, both tested: `PAT.forward(n_packets=)` (runs only the first n positions; equal to the full pass) and per-position `GaussianBank.mahal_at` / `UnknownModel.score_at`; `drift_monitor.reference_histogram` was factored out so the service's `prior_kl` uses phase 5's exact reference.
+  - **Throughput (success criterion 016): target missed, measured value reported.** Prefix recompute through all 31 positions scored ~190 packet events/s; with `n_packets` truncation and length buckets ~330-430 events/s in isolation. Live, with the database and API running: **~300 packet events/s, ~23 flows/s decided at mean K ≈ 6, batch p95 ~380 ms** (4 torch threads; thread count barely matters, the CPU is compute-bound at ~55 MFLOP per full flow). 5,000 events/s needs batched KV-cache stepping (phase 5 timed one `PATStream.step` at 1.65 ms); recorded as future work. The first live run also showed a replay faster than the engine piling 26k events into the queue (packets of flows the backlog was about to decide); replays now pace themselves to the engine (queue held near 256).
+  - **T3 UI** (correction S10). Story sections plus seven console pages; `tests/service/test_api.py` checks the page and assets are served and that every endpoint the JS calls exists. Reviewed from headless-Edge screenshots (`/?still` gives a fixed-height hero for full-page capture); fixes from that review: hero flows moved into view, chart labels and clipping, tile layout.
+  - **T4** `docs/demo.md`: the five-minute script, rehearsal checklist, Windows port recovery.
+  - **A phase-5 test leak, found and fixed here.** The full suite failed `test_loop_regression` (CNN and GRU) while each passed alone: `evaluation.efficiency.bench_all` set torch to 1 thread and never restored it, so every later test trained under a different thread count than the goldens were recorded with. `bench_all` now restores the previous count; the two files pass together.
+  - **T5** `service` extra filled (fastapi, uvicorn, sqlalchemy, pydantic, python-multipart, httpx); corrections written into specs 016-018; index files and `CLAUDE.md` updated.
 - **2026-11-17.** Forward draft written. Not started.

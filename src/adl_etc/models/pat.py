@@ -270,25 +270,43 @@ class PAT(nn.Module):
             "z": z,
         }
 
-    def forward(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+    def forward(
+        self, batch: dict[str, Any], n_packets: int | None = None
+    ) -> dict[str, torch.Tensor]:
+        """Every head at every packet position, ``[B, 30, ...]``.
+
+        ``n_packets`` (causal models only) runs ``[BOS]`` and the first ``n_packets`` positions
+        and returns ``[B, n_packets, ...]``. Each position sees only earlier ones, so these equal
+        the full pass's first ``n_packets`` positions (within fp32 tolerance; tested) at a
+        fraction of the cost. The service (spec 016) scores short prefixes this way."""
         tokens = batch["tokens"]
+        cont = batch.get("cont")
+        mask = batch["mask"]
+        if n_packets is not None:
+            if not self.causal:
+                raise ValueError("n_packets needs a causal model")
+            if not 1 <= n_packets <= P.K_MAX:
+                raise ValueError(f"n_packets must be in 1..{P.K_MAX}, got {n_packets}")
+            tokens, mask = tokens[:, :n_packets], mask[:, :n_packets]
+            cont = None if cont is None else cont[:, :n_packets]
         b = tokens.shape[0]
-        x = self._embed_packets(tokens, batch.get("cont"))
-        h = torch.cat([self.bos.to(x.dtype).expand(b, 1, -1), x], dim=1) + self.emb_pos.weight
+        t = tokens.shape[1] + 1
+        x = self._embed_packets(tokens, cont)
+        h = torch.cat([self.bos.to(x.dtype).expand(b, 1, -1), x], dim=1) + self.emb_pos.weight[:t]
         h = self.emb_norm(self.emb_drop(h))
 
         valid = torch.cat(
-            [torch.ones(b, 1, dtype=torch.bool, device=tokens.device), batch["mask"].bool()], dim=1
+            [torch.ones(b, 1, dtype=torch.bool, device=tokens.device), mask.bool()], dim=1
         )
-        allowed = valid[:, None, None, :].expand(b, 1, N_POSITIONS, N_POSITIONS)
+        allowed = valid[:, None, None, :].expand(b, 1, t, t)
         if self.causal:
-            tril = torch.ones(N_POSITIONS, N_POSITIONS, dtype=torch.bool, device=tokens.device)
+            tril = torch.ones(t, t, dtype=torch.bool, device=tokens.device)
             allowed = allowed & tril.tril()
         for block in self.blocks:
             h = block(h, allowed)
         z = self.norm_f(h)
 
-        out = self._outputs(z, torch.arange(N_POSITIONS, device=z.device))
+        out = self._outputs(z, torch.arange(t, device=z.device))
         per_packet = {name: t[:, 1:] for name, t in out.items()}
         per_packet["cls0"] = out["cls"][:, 0]
         per_packet["z0"] = out["z"][:, 0]
