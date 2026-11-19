@@ -244,6 +244,25 @@ def _per_signal_first(windows: Sequence[Mapping[str, Any]], signals: Sequence[st
     return out
 
 
+def reference_histogram(
+    val: ScoreArrays, um: UnknownModel | None, theta: float, n_classes: int, f: float = F_REJECT
+) -> np.ndarray:
+    """The class-prior KL's reference: the committed-class histogram of validation decided at
+    ``theta`` (time order, rejection at ``f`` when there is an unknown model). The service
+    (phase 6) loads the same histogram, so its ``prior_kl`` means what phase 5's does."""
+    order = np.lexsort((val.flow_index, val.period))
+    u = um.score_of(val) if um is not None else np.zeros((len(val), K_MAX))
+    res = R.safe_stop(
+        val.p_safe[order],
+        u[order],
+        val.pred[order],
+        val.ppi_len[order],
+        theta,
+        um.theta_reject(f) if um is not None else R.NO_REJECTION,
+    )
+    return DR.class_histogram(res.prediction, n_classes)
+
+
 def monitor_report(
     splits: Mapping[str, ScoreArrays],
     um: UnknownModel | None,
@@ -256,19 +275,8 @@ def monitor_report(
     from adl_etc.evaluation.drift_curves import calibrate_commit_threshold
 
     theta = calibrate_commit_threshold(splits["val"], TARGET_MEAN_K)
-    # the reference class histogram: what validation commits to at this threshold
-    order = np.lexsort((splits["val"].flow_index, splits["val"].period))
-    u = um.score_of(splits["val"]) if um is not None else np.zeros((len(splits["val"]), K_MAX))
-    res = R.safe_stop(
-        splits["val"].p_safe[order],
-        u[order],
-        splits["val"].pred[order],
-        splits["val"].ppi_len[order],
-        theta,
-        um.theta_reject(F_REJECT) if um is not None else R.NO_REJECTION,
-    )
     n_classes = int(max(int(s.pred.max()) for s in splits.values()) + 1)
-    ref_hist = DR.class_histogram(res.prediction, n_classes)
+    ref_hist = reference_histogram(splits["val"], um, theta, n_classes)
     return {
         "theta_commit": theta,
         "window": window,

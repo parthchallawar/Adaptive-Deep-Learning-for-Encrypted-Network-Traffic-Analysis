@@ -37,9 +37,9 @@ The order below is a verified topological sort of the `Depends on` line of every
 | 13 | [011](011-resource-budget-controller.md) Resource budget controller | contribution C3 | **built and run 2026-11-18**: holds the budget and recovers from a target step; a static threshold is enough under this mild drift; [results](../docs/results-phase-4.md) |
 | 14 | [012](012-drift-monitoring-and-adaptation.md) Drift monitoring | needs the policy and controller to watch | **monitoring built and run 2026-11-18** (`inference/drift.py`, three seeds): class-prior KL and next-packet NLL track the weekly macro-F1 (about -0.9); adaptation and the dashboard panel not built; [results](../docs/results-phase-5.md) |
 | 15 | [013](013-efficiency-and-latency-benchmarking.md) Efficiency benchmarking | measures everything above | **built and run 2026-11-18**: PAT full flow 2.49 ms and 885,821 parameters meet the bars, streaming step 1.65 ms misses the 1 ms bar; ONNX not built; [results](../docs/results-phase-5.md) |
-| 16 | [018](018-storage-and-database.md) Storage and database | **before 016**, which writes to it | not started; forward-draft plan ([phase 6](../plans/phase-6-service-dashboard-demo.md)) |
-| 17 | [016](016-inference-service-api.md) Inference service | puts the research online | not started; forward-draft plan (phase 6) |
-| 18 | [017](017-dashboard.md) Dashboard | reads the service and the results | not started; forward-draft plan (phase 6) |
+| 16 | [018](018-storage-and-database.md) Storage and database | **before 016**, which writes to it | built 2026-11-18 ([phase 6](../plans/phase-6-service-dashboard-demo.md), S4, S5) |
+| 17 | [016](016-inference-service-api.md) Inference service | puts the research online | built 2026-11-18 (phase 6; no live capture; throughput target missed, ~300 events/s) |
+| 18 | [017](017-dashboard.md) Dashboard | reads the service and the results | built 2026-11-18 as a web UI served by the service (phase 6, S10) |
 | 19 | [021](021-report-and-paper.md) Report, paper and presentation | the final artefact; writing may start after step 13 | not started; forward-draft plan ([phase 7](../plans/phase-7-report-paper.md)) |
 
 ### Outside the order

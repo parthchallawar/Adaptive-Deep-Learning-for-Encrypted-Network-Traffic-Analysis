@@ -1,6 +1,6 @@
 # Spec 018: Storage and Database
 
-- **Status:** draft
+- **Status:** built 2026-11-18 (plan phase 6, T1) with S4 and S5. Implemented: every table, the queued writer, WAL, the schema-version guard, the salted key hash, the dashboard's read helpers. Not implemented: pruning and Parquet export scripts (optional), PostgreSQL (untested).
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 16 of 18 (before 016, which writes to it)
@@ -83,3 +83,14 @@ Build plan (forward draft): [`plans/phase-6-service-dashboard-demo.md`](../plans
 ## Open questions
 
 - Whether to keep `decision_trace` on by default in demos (default: on for the inspector page, off under load).
+
+## Corrections after building (phase 6, 2026-11-18)
+
+| # | Spec text | What was built | Why |
+|---|---|---|---|
+| S4 | async engine, Alembic | synchronous SQLAlchemy Core, one writer thread (flush at 200 rows or 100 ms, retried, never dropped silently), WAL; `create_all` plus `schema_version` (a mismatch raises `SchemaVersionError`) | disposable demo state |
+| S5 | `flowstats` `float32[43]` | `float32[46]` | `FlowRecord.flowstats()` has 46 columns |
+| — | salt per capture session | one random salt per service process (`service/privacy.py`), never written | same guarantee, simpler; a session never outlives the process |
+| — | extra columns | `flow.true_class`, `flow.true_known`, `decision.correct` (shard replay only: the dataset label and open-world correctness), `decision.u_threshold`, `decision.forced` | the demo shows whether each call was right |
+| — | indexes | `decision(decided_at)` became a covering index `(decided_at, decision, k, forced, theta_commit, correct, time_to_decision_ms)`; whole-table totals come from the engine's counters | with a filter on `decision` SQLite chose the wrong index (stats 1.6 s, the strip chart 3.7 s on 1M rows); now 5 ms and 75 ms |
+| — | < 200 ms with 1M rows | met: slowest query 75 ms (`tests/service/test_db.py`, marked slow), with the million rows spread over four hours, about the engine's measured rate | — |

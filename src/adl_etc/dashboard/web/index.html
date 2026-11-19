@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adaptive Deep Learning for Encrypted Network Traffic Analysis</title>
+  <meta name="description" content="Adaptive deep learning for encrypted network traffic analysis: name the app behind an encrypted flow after its first few packets, say unknown when unsure, and hold a compute budget as traffic drifts.">
+  <meta name="theme-color" content="#04060E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Unbounded:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2304060E'/%3E%3Cpath d='M6 20v-6M10 20v-10M14 20v-4M18 20v-8' stroke='%235BE3E0' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='16' r='3' fill='%235BE3E0'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="cursor-light" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="#hero" aria-label="Adaptive Deep Learning for Encrypted Network Traffic Analysis, home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 21v-6M9.5 21V9M14 21v-4M18.5 21v-9" /><circle cx="25" cy="16" r="3.2" /></svg>
+      <span>Adaptive Deep Learning for <br>Encrypted Network Traffic Analysis</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#vision">Idea</a>
+      <a href="#decide">Decision</a>
+      <a href="#model">Model</a>
+      <a href="#results">Results</a>
+      <a href="#future">Next</a>
+    </nav>
+    <div class="nav-right">
+      <span class="status-pill" id="status-pill" title="Service status"><i></i><b>Checking service</b></span>
+      <a class="btn btn-solid magnetic" href="#console" id="open-console">Open live console</a>
+    </div>
+  </header>
+
+  <main id="story">
+    <!-- HERO ------------------------------------------------------------------------------- -->
+    <section id="hero" class="hero">
+      <canvas id="flowfield" aria-hidden="true"></canvas>
+      <div class="hero-veil" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <p class="hero-kicker reveal-hero" style="--d:0">Encrypted traffic, read by its rhythm</p>
+        <h1 class="hero-title reveal-hero" style="--d:1">
+          <span>Name the app</span>
+          <span>before the flow</span>
+          <span>has finished.</span>
+        </h1>
+        <p class="hero-sub reveal-hero" style="--d:2">The model watches only packet sizes, timing and direction. After every packet it makes one of three calls: name the application, flag the flow as <em class="t-rose">unknown</em>, or wait for one more packet.</p>
+        <div class="hero-cta reveal-hero" style="--d:3">
+          <a class="btn btn-solid magnetic" href="#console">Watch it decide live</a>
+          <a class="btn btn-ghost magnetic" href="#results">See what held up</a>
+        </div>
+      </div>
+      <div class="hero-chips" aria-label="Headline measurements">
+        <div class="chip glass tilt reveal-hero" style="--d:4" data-depth="18">
+          <b data-count="5.4" data-dec="1">5.4</b><span>packets read, on average, per flow of a known app</span>
+        </div>
+        <div class="chip glass tilt reveal-hero" style="--d:5" data-depth="30">
+          <b data-count="0.910" data-dec="3">0.910</b><span>AUROC for spotting unseen apps at 8 packets</span>
+        </div>
+        <div class="chip glass tilt reveal-hero" style="--d:6" data-depth="12">
+          <b data-count="2.49" data-dec="2">2.49 ms</b><span>per flow on a laptop CPU</span>
+        </div>
+      </div>
+      <a class="scroll-hint" href="#vision" aria-label="Scroll to the idea"><span></span></a>
+      <p class="legend-hero" aria-hidden="true"><i class="lg lg-cyan"></i>named <i class="lg lg-rose"></i>unknown <i class="lg lg-dim"></i>still listening</p>
+    </section>
+
+    <!-- VISION ------------------------------------------------------------------------------- -->
+    <section id="vision" class="band band-vision">
+      <div class="wrap split">
+        <div class="reveal">
+          <h2 class="h2">Encryption hides the words. The rhythm stays visible.</h2>
+          <p class="lede">TLS and QUIC hide every byte of content. What still shows is the shape of the conversation: how big each packet is, which way it travels, and how long the gap is before the next one. Different apps leave different shapes.</p>
+          <p class="body">The model reads four numbers per packet, for at most the first 30 packets that carry data. It never sees payload, addresses or ports, so it cannot cheat by recognising a server.</p>
+          <dl class="quad">
+            <div><dt>Size</dt><dd>bytes of payload, up to 1,500</dd></div>
+            <div><dt>Direction</dt><dd>from the client, or back to it</dd></div>
+            <div><dt>Gap</dt><dd>milliseconds since the last packet</dd></div>
+            <div><dt>Push flag</dt><dd>the sender asked for prompt delivery</dd></div>
+          </dl>
+        </div>
+        <figure class="flowprint glass reveal" aria-label="One TLS flow drawn as packet bars">
+          <figcaption>
+            <span class="fp-title">One flow, as the model sees it</span>
+            <span class="fp-note" id="fp-note">Hover a packet</span>
+          </figcaption>
+          <svg id="flowprint" viewBox="0 0 560 300" role="img" aria-label="Packet sizes above the line go to the server, below the line come back"></svg>
+          <div class="fp-axis"><span>client to server</span><span>server to client</span></div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- DECISION ----------------------------------------------------------------------------- -->
+    <section id="decide" class="band band-decide">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2 class="h2">Three calls, made after every packet</h2>
+          <p class="lede">Each new packet updates two scores. One says how likely the current guess is to be right. The other says how unlike anything from training this flow looks. Drag through the packets to see the rule fire.</p>
+        </div>
+        <div class="decide-grid reveal">
+          <div class="decide-chart glass">
+            <div class="dc-head">
+              <div class="seg" id="dc-examples" role="radiogroup" aria-label="Example flow">
+                <button type="button" role="radio" data-ex="known" aria-checked="true">A familiar app</button>
+                <button type="button" role="radio" data-ex="unknown">An app it never saw</button>
+                <button type="button" role="radio" data-ex="live" hidden>A real flow from the console</button>
+              </div>
+              <span class="dc-k">after packet <b id="dc-k">1</b></span>
+            </div>
+            <p class="dc-source" id="dc-source">Illustrative curves shaped like the measured ones.</p>
+            <div class="dc-plot"><span>Chance the current guess is right</span><svg id="decide-p" viewBox="0 0 640 150" role="img" aria-label="Confidence by packet"></svg></div>
+            <div class="dc-plot"><span>Unknown score</span><svg id="decide-u" viewBox="0 0 640 150" role="img" aria-label="Unknown score by packet"></svg></div>
+            <label class="scrub">
+              <span class="sr-only">Packet number</span>
+              <input type="range" id="dc-range" min="1" max="12" value="1">
+            </label>
+          </div>
+          <ol class="rules" aria-live="polite">
+            <li class="rule" data-rule="reject"><span class="rule-dot rose"></span><div><h3>Flag as unknown</h3><p>From packet 3 on, if the unknown score passes its threshold for this packet count. The threshold is set so about 2% of familiar flows trip it.</p></div></li>
+            <li class="rule" data-rule="commit"><span class="rule-dot cyan"></span><div><h3>Name the app</h3><p>From packet 2 on, if the calibrated chance that the current guess is right passes the commit threshold.</p></div></li>
+            <li class="rule" data-rule="wait"><span class="rule-dot dim"></span><div><h3>Read one more packet</h3><p>Otherwise. At the last packet the flow is decided anyway, so nothing waits forever.</p></div></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- TIMELINE ----------------------------------------------------------------------------- -->
+    <section id="timeline" class="band band-timeline">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2 class="h2">How the research was built</h2>
+          <p class="lede">Six phases, each closed with its own results document before the next began. Numbers below are from those documents.</p>
+        </div>
+        <ol class="phases">
+          <li class="phase reveal"><span class="ph-n">1</span><div><h3>A data pipeline that cannot leak</h3><p>12.5 million flows from 42 weeks of CESNET-TLS-Year22, split by time, with four leakage checks enforced every time a split loads.</p></div></li>
+          <li class="phase reveal"><span class="ph-n">2</span><div><h3>Baselines on rented GPUs</h3><p>A CNN and a GRU trained on Kaggle with resumable sessions and every run tracked.</p></div></li>
+          <li class="phase reveal"><span class="ph-n">3</span><div><h3>A transformer that reads prefixes</h3><p>Self-supervised pretraining, then training at every prefix length. 24 models, about 20 GPU-hours.</p></div></li>
+          <li class="phase reveal"><span class="ph-n">4</span><div><h3>Stop, reject, and hold a budget</h3><p>The three-way rule, the unknown score and a feedback controller for packets read per flow.</p></div></li>
+          <li class="phase reveal"><span class="ph-n">5</span><div><h3>Eighteen weeks of drift</h3><p>Measured how every model decays over time and which label-free signals see it coming.</p></div></li>
+          <li class="phase reveal current"><span class="ph-n">6</span><div><h3>The live system</h3><p>This service, its database and the console: the same code as the offline experiments, streamed packet by packet.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- MODEL -------------------------------------------------------------------------------- -->
+    <section id="model" class="band band-model">
+      <div class="wrap split split-rev">
+        <div class="stack" id="stack" aria-label="System layers, from packets to decisions">
+          <div class="layer glass" data-depth="0.00"><h3>Packets</h3><p>size, direction, gap, push flag</p></div>
+          <div class="layer glass" data-depth="0.04"><h3>Prefix-Aware Transformer</h3><p>4 causal layers, 885,821 parameters. Its output after packet k never looks at packet k+1.</p></div>
+          <div class="layer glass" data-depth="0.08"><h3>Four heads</h3><p>class, chance of being right, a 128-d fingerprint, and a guess at the next packet</p></div>
+          <div class="layer glass accent" data-depth="0.12"><h3>The rule</h3><p>name it, flag it, or wait</p></div>
+          <div class="layer glass" data-depth="0.16"><h3>Budget controller and drift monitor</h3><p>keeps packets-per-flow on target, and watches six signals that need no labels</p></div>
+        </div>
+        <div class="reveal">
+          <h2 class="h2">One small model, four answers per packet</h2>
+          <p class="lede">The transformer was first pretrained to predict the next packet of unlabelled traffic, then taught to classify at every prefix length at once.</p>
+          <ul class="facts">
+            <li><b>Unknown score.</b> Combines the model's energy, the distance of its fingerprint from every known app, and how surprised it is by each new packet.</li>
+            <li><b>Calibrated confidence.</b> Fitted separately for each packet count, so a 0.93 means the same thing at packet 2 as at packet 20.</li>
+            <li><b>Budget controller.</b> A feedback loop moves the commit threshold so the average number of packets read stays where an operator sets it.</li>
+            <li><b>Drift monitor.</b> Six label-free signals over windows of 5,000 decisions, each watched by a CUSUM alarm.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- BUDGET SIMULATOR -------------------------------------------------------------------- -->
+    <section id="budget" class="band band-budget">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2 class="h2">Trade packets for accuracy</h2>
+          <p class="lede">Every packet you wait for costs time and compute. Slide the budget to see what the measured trade looks like on held-out weeks: Safe-Stop, this project's rule, against P-ECHO, the strongest baseline.</p>
+        </div>
+        <div class="sim glass reveal">
+          <div class="sim-controls">
+            <label for="sim-k">Average packets read per flow</label>
+            <output id="sim-k-out">6.0</output>
+            <input type="range" id="sim-k" min="3" max="12" step="0.1" value="6">
+            <div class="sim-meter" id="sim-meter" aria-hidden="true"></div>
+          </div>
+          <div class="sim-read">
+            <div class="sim-num"><b id="sim-acc">88.8%</b><span>Safe-Stop accuracy, known apps</span></div>
+            <div class="sim-num dim"><b id="sim-echo">88.9%</b><span>P-ECHO at the same budget</span></div>
+          </div>
+          <svg id="sim-svg" viewBox="0 0 720 280" role="img" aria-label="Accuracy against average packets read"></svg>
+          <p class="fine">One seed of the self-supervised transformer on test weeks 31 to 34, closed world. Source: results/phase4.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULTS ------------------------------------------------------------------------------- -->
+    <section id="results" class="band band-results">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <h2 class="h2">What held up, and what did not</h2>
+          <p class="lede">Three seeds where it says so. Each hypothesis had a pass bar written before the runs, and the misses are reported next to the hits.</p>
+        </div>
+        <div class="verdicts">
+          <article class="verdict reveal met"><h3>Beats the recurrent baseline at every prefix</h3><p class="v-num">0.826 <small>vs 0.793</small></p><p>Mean accuracy over prefix lengths 1 to 30, self-supervised transformer against the GRU, three seeds each.</p></article>
+          <article class="verdict reveal met"><h3>Spots apps it never saw in training</h3><p class="v-num">0.910 <small>AUROC at packet 8</small></p><p>30 of 180 apps were held out entirely. Bar: 0.85 at packet 8 and 0.90 at packet 30 (measured 0.903).</p></article>
+          <article class="verdict reveal met"><h3>Holds the packet budget under drift</h3><p class="v-num">&lt; 5% <small>tracking error</small></p><p>Over 18 drift weeks the controller kept average packets within 5% of target. A fixed threshold also held it under this mild drift, so the controller's edge is not shown.</p></article>
+          <article class="verdict reveal miss"><h3>Beating confidence-threshold stopping</h3><p class="v-num">−0.7 <small>points at 6 packets</small></p><p>Safe-Stop beats P-CAPE by 9 points but not P-ECHO or the RL stopper. The bar was +1.5 points.</p></article>
+          <article class="verdict reveal miss"><h3>Rejecting unknowns 30% earlier</h3><p class="v-num">28% <small>at best</small></p><p>Against a fixed packet-10 gate at the same false-alarm rate: 4% earlier at 2% false alarms, 28% at 5%. Bar: 30%.</p></article>
+          <article class="verdict reveal miss"><h3>The 1 ms streaming step</h3><p class="v-num">1.65 ms <small>per packet</small></p><p>The full pass meets its 5 ms bar at 2.49 ms per flow; the per-packet cached step misses its 1 ms bar on this CPU.</p></article>
+        </div>
+        <div class="charts2">
+          <figure class="glass chartcard reveal">
+            <figcaption><h3>Seeing the unknown early</h3><p>AUROC by packets read: the combined score against energy alone (three-seed means)</p></figcaption>
+            <svg id="auroc-svg" viewBox="0 0 560 260" role="img" aria-label="Unknown-detection AUROC by packet count"></svg>
+          </figure>
+          <figure class="glass chartcard reveal">
+            <figcaption><h3>Eighteen weeks later</h3><p>Weekly accuracy and macro-F1 under Safe-Stop. Weeks 31 to 34 are the test period, then drift.</p></figcaption>
+            <svg id="weeks-svg" viewBox="0 0 560 260" role="img" aria-label="Weekly accuracy and macro F1"></svg>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- FUTURE ------------------------------------------------------------------------------ -->
+    <section id="future" class="band band-future">
+      <div class="wrap split">
+        <div class="reveal">
+          <h2 class="h2">Where it goes next</h2>
+          <p class="lede">Each of these is written up in the project's future-work notes with what it would take. None is claimed here.</p>
+        </div>
+        <ul class="horizon reveal">
+          <li><h3>Adapting without labels</h3><p>The drift monitor sees decay coming. The next step is acting on it: refreshing calibration and thresholds from unlabelled traffic.</p></li>
+          <li><h3>Ten times the packet rate</h3><p>Batched per-flow caches instead of recomputing each prefix, plus int8 and ONNX export.</p></li>
+          <li><h3>Live capture</h3><p>Reading a network interface directly instead of replayed weeks and uploaded captures.</p></li>
+          <li><h3>Thresholds with guarantees</h3><p>Conformal methods so the false-alarm rate holds with a stated probability, not just on average.</p></li>
+          <li><h3>Decisions across a host's flows</h3><p>One device opens many connections; reading them together should decide sooner.</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- PEOPLE ------------------------------------------------------------------------------ -->
+    <section id="people" class="band band-people">
+      <div class="wrap split">
+        <div class="person glass reveal">
+          <div class="avatar" aria-hidden="true">PC</div>
+          <div>
+            <h2 class="h3">Parth Challawar</h2>
+            <p>Final-year project. Research question, data pipeline, models, experiments and this system, built by one person on a Windows laptop and Kaggle's free GPUs.</p>
+          </div>
+        </div>
+        <dl class="apparatus reveal">
+          <div><dt>Main dataset</dt><dd>CESNET-TLS-Year22: 180 apps, weeks 11 to 52 of 2022, 3% sample</dd></div>
+          <div><dt>Other datasets</dt><dd>USTC-TFC2016 and ISCX VPN-nonVPN 2016 for early pipeline checks; no headline result uses them</dd></div>
+          <div><dt>Compute</dt><dd>Kaggle's free T4 GPUs: about 20 GPU-hours for the transformer runs alone</dd></div>
+          <div><dt>Checkpoints</dt><dd>Nine headline models, three seeds each, hash-verified</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- COLLABORATE ------------------------------------------------------------------------- -->
+    <section id="collab" class="band band-collab">
+      <div class="wrap collab reveal">
+        <h2 class="h2">Run it yourself</h2>
+        <p class="lede">Everything on this page runs locally. Start the service, open the console, and replay a week of real traffic.</p>
+        <div class="cmd glass">
+          <code id="cmd-text">python -m adl_etc.service</code>
+          <button class="btn btn-ghost btn-sm" id="copy-cmd" type="button">Copy command</button>
+        </div>
+        <p class="fine">Questions about the method, the data or a collaboration are welcome through the project repository's issues.</p>
+        <a class="btn btn-solid magnetic" href="#console">Open live console</a>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>Adaptive Deep Learning for Encrypted Network Traffic Analysis, a research prototype</span>
+      <span>Classifies encrypted traffic by app. Not a security or fraud product.</span>
+    </footer>
+  </main>
+
+  <!-- CONSOLE ----------------------------------------------------------------------------- -->
+  <section id="console" class="console" hidden aria-label="Live console">
+    <aside class="c-side">
+      <a class="brand" href="#hero" id="close-console" aria-label="Back to the story">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 21v-6M9.5 21V9M14 21v-4M18.5 21v-9" /><circle cx="25" cy="16" r="3.2" /></svg>
+        <span>Adaptive Deep Learning for <br>Encrypted Network Traffic Analysis</span>
+      </a>
+      <nav class="c-tabs" role="tablist" aria-label="Console pages">
+        <button role="tab" data-tab="monitor" aria-selected="true">Monitor</button>
+        <button role="tab" data-tab="budget">Budget</button>
+        <button role="tab" data-tab="inspector">Flow inspector</button>
+        <button role="tab" data-tab="unknown">Unknown</button>
+        <button role="tab" data-tab="drift">Drift</button>
+        <button role="tab" data-tab="experiments">Experiments</button>
+        <button role="tab" data-tab="system">Model and system</button>
+      </nav>
+      <div class="c-health" id="c-health"></div>
+    </aside>
+    <div class="c-main">
+      <div class="c-banner" id="c-banner" hidden></div>
+
+      <!-- Monitor -->
+      <div class="c-page" data-page="monitor">
+        <header class="c-head"><h1>Monitor</h1><p>Replay a week of real traffic or upload a capture, then watch decisions arrive.</p></header>
+        <div class="c-row">
+          <form class="panel" id="replay-form">
+            <h2>Replay a week</h2>
+            <div class="fields">
+              <label>Week<select id="rp-period"></select></label>
+              <label>Flows<input id="rp-count" type="number" min="1" max="200000" value="3000"></label>
+              <label>New flows per second<input id="rp-rate" type="number" min="1" max="10000" value="30"></label>
+              <label>Time speed-up<input id="rp-speed" type="number" min="0.1" max="1000" step="0.1" value="2"></label>
+            </div>
+            <button class="btn btn-solid" type="submit">Start replay</button>
+          </form>
+          <form class="panel" id="pcap-form">
+            <h2>Upload a capture</h2>
+            <p class="hint">pcap or pcapng. Predictions on your own capture can be poor: it was recorded somewhere other than the training data.</p>
+            <div class="fields">
+              <label>File<input id="pc-file" type="file" accept=".pcap,.pcapng,.cap"></label>
+              <label>Time speed-up<input id="pc-speed" type="number" min="0.1" max="1000" step="0.1" value="5"></label>
+            </div>
+            <button class="btn btn-ghost" type="submit">Upload and replay</button>
+          </form>
+          <div class="panel" id="jobs-panel"><h2>Jobs</h2><ul class="jobs" id="jobs"></ul></div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div class="panel"><h2>Last ten minutes</h2><div id="mon-chart" class="chart"></div></div>
+        <div class="panel">
+          <div class="panel-head"><h2>Latest decisions</h2><span class="hint">Select a row to inspect the flow</span></div>
+          <div class="table-wrap"><table class="tbl" id="flows-tbl"><thead><tr><th>Flow</th><th>Call</th><th>App</th><th>True app</th><th>Packets</th><th>Confidence</th><th>Unknown score</th><th>Time</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Budget -->
+      <div class="c-page" data-page="budget" hidden>
+        <header class="c-head"><h1>Budget</h1><p>Set how many packets the system may read per flow on average. In auto mode the controller moves the commit threshold to hold it.</p></header>
+        <div class="c-row">
+          <form class="panel" id="budget-form">
+            <h2>Controls</h2>
+            <div class="seg" id="bud-mode" role="radiogroup" aria-label="Mode">
+              <button type="button" data-v="auto" role="radio" aria-checked="true">Auto</button>
+              <button type="button" data-v="manual" role="radio">Manual</button>
+              <button type="button" data-v="quality_first" role="radio">Quality first</button>
+            </div>
+            <div class="fields">
+              <label>Metric<select id="bud-metric"><option value="mean_k">Average packets</option><option value="p95_k">95th percentile packets</option></select></label>
+              <label>Target packets <output id="bud-target-out">6</output><input id="bud-target" type="range" min="2" max="14" step="0.5" value="6"></label>
+              <label>Manual threshold <output id="bud-theta-out">0.93</output><input id="bud-theta" type="range" min="0.5" max="0.995" step="0.005" value="0.93"></label>
+            </div>
+            <button class="btn btn-solid" type="submit">Apply</button>
+          </form>
+          <div class="panel kpis-panel" id="bud-state"></div>
+        </div>
+        <div class="panel"><h2>Target and realised packets per window</h2><div id="bud-chart" class="chart"></div></div>
+        <div class="panel"><h2>Commit threshold over time</h2><div id="theta-chart" class="chart small"></div></div>
+        <div class="panel"><h2>Offline trade-off for context</h2><p class="hint">Safe-Stop's measured accuracy against average packets (phase 4). The marker is the current target.</p><div id="bud-front" class="chart"></div></div>
+      </div>
+
+      <!-- Inspector -->
+      <div class="c-page" data-page="inspector" hidden>
+        <header class="c-head"><h1>Flow inspector</h1><p>One flow, packet by packet: what the model believed after each one and why it stopped where it did.</p></header>
+        <form class="panel inline-form" id="insp-form"><label>Flow id<input id="insp-id" type="number" min="1"></label><button class="btn btn-solid" type="submit">Inspect</button><span class="hint" id="insp-hint">Or select a row on the Monitor page.</span></form>
+        <div id="insp-body"></div>
+      </div>
+
+      <!-- Unknown -->
+      <div class="c-page" data-page="unknown" hidden>
+        <header class="c-head"><h1>Unknown</h1><p>Flows the system refused to name. During a replay, rows with a true app outside training are correct rejections.</p></header>
+        <div class="c-row two">
+          <div class="panel"><h2>When flows are decided</h2><p class="hint">Packets read at the decision, last ten minutes: all decisions against rejections.</p><div id="unk-hist" class="chart"></div></div>
+          <div class="panel"><h2>Offline detection quality</h2><p class="hint">AUROC by packets read on the test weeks (phase 4).</p><div id="unk-auroc" class="chart"></div></div>
+        </div>
+        <div class="panel"><h2>Rejected flows</h2><div class="table-wrap"><table class="tbl" id="unk-tbl"><thead><tr><th>Flow</th><th>Packets</th><th>Unknown score</th><th>Threshold</th><th>True app</th><th>Time</th></tr></thead><tbody></tbody></table></div></div>
+      </div>
+
+      <!-- Drift -->
+      <div class="c-page" data-page="drift" hidden>
+        <header class="c-head"><h1>Drift</h1><p>Label-free signals compared with validation weeks. A CUSUM alarm fires when a signal keeps drifting the same way.</p></header>
+        <div class="c-row two">
+          <div class="panel" id="drift-state"></div>
+          <div class="panel"><h2>Signals now</h2><div id="drift-bars"></div></div>
+        </div>
+        <div class="panel"><h2>Signal history (standard deviations from validation)</h2><div id="drift-chart" class="chart"></div></div>
+        <div class="panel"><h2>Offline: weekly decay</h2><p class="hint">Macro-F1 under Safe-Stop per week (phase 5). The live monitor is the same code.</p><div id="drift-weeks" class="chart"></div></div>
+      </div>
+
+      <!-- Experiments -->
+      <div class="c-page" data-page="experiments" hidden>
+        <header class="c-head"><h1>Experiments</h1><p>The summary tables, read from results/summaries.</p></header>
+        <div class="panel" id="exp-criteria"></div>
+        <div class="seg" id="exp-tabs" role="tablist"></div>
+        <div class="panel md" id="exp-table"></div>
+      </div>
+
+      <!-- System -->
+      <div class="c-page" data-page="system" hidden>
+        <header class="c-head"><h1>Model and system</h1><p>What is loaded and how fast it is running.</p></header>
+        <div class="c-row two">
+          <div class="panel" id="sys-model"></div>
+          <div class="panel" id="sys-engine"></div>
+        </div>
+        <div class="panel"><div class="panel-head"><h2>Model reload</h2><button class="btn btn-ghost btn-sm" id="reload-btn" type="button">Reload from production.json</button></div><p class="hint">New flows use the reloaded model; flows already in flight finish on the old one.</p><p id="reload-msg" class="hint"></p></div>
+        <div class="panel"><h2>Prometheus metrics</h2><pre class="pre" id="sys-metrics"></pre></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/data.js"></script>
+  <script src="/static/charts.js"></script>
+  <script src="/static/site.js"></script>
+  <script src="/static/console.js"></script>
+</body>
+</html>

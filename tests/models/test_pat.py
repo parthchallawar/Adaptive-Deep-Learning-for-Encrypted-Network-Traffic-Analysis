@@ -160,6 +160,25 @@ def test_streaming_equals_the_full_forward_pass_at_every_real_position(
             )
 
 
+@pytest.mark.parametrize("n", [1, 4, 17, 30])
+def test_a_truncated_forward_equals_the_full_pass_on_its_positions(
+    flows: ArrayData, std: Standardizer, n: int
+) -> None:
+    """The service scores short prefixes with ``n_packets`` (spec 016, plan phase 6 S3)."""
+    model = small()
+    batch = batch_of(flows, std, model.views)
+    full = model(batch)
+    part = model(batch, n_packets=n)
+    for head in HEADS:
+        assert part[head].shape[1] == n, head
+        torch.testing.assert_close(part[head], full[head][:, :n], rtol=1e-5, atol=1e-5, msg=head)
+    torch.testing.assert_close(part["cls0"], full["cls0"], rtol=1e-5, atol=1e-5)
+    with pytest.raises(ValueError, match="causal"):
+        small(causal=False)(batch, n_packets=n)
+    with pytest.raises(ValueError, match="n_packets"):
+        model(batch, n_packets=31)
+
+
 def test_streaming_refuses_a_training_or_non_causal_model_and_a_31st_packet() -> None:
     with pytest.raises(ValueError, match="eval"):
         PATStream(small().train())

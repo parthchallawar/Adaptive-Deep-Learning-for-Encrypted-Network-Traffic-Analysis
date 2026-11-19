@@ -1,6 +1,6 @@
 # Spec 016: Inference Service (FastAPI)
 
-- **Status:** draft
+- **Status:** built 2026-11-18 (plan phase 6, T2), with the corrections below. Implemented: every endpoint in the API table except live capture (501), plus `/ingest/shards`, `/ingest/periods`, `/stats`, `/stats/series`, `/unknown`, `/experiments`, `/system`, `/jobs`; streaming per-flow state, micro-batching, controller and drift monitor online; Prometheus `/metrics`. Not implemented: live capture, the MLflow registry, ONNX, batched `PATStream`. Throughput target missed (measured ~300 packet events/s, not 5,000).
 - **Owner:** Parth Challawar
 - **Created:** 2026-09-17
 - **Build step:** step 17 of 18
@@ -96,3 +96,17 @@ Build plan (forward draft): [`plans/phase-6-service-dashboard-demo.md`](../plans
 
 - WebSocket vs. server-sent events for the dashboard (default: WebSocket).
 - Whether `/score/flow` should also accept raw packet lists (default: yes, tensorised server-side).
+
+## Corrections after building (phase 6, 2026-11-18)
+
+Recorded in the plan's scope table; these describe what the code does.
+
+| # | Spec text | What was built | Why |
+|---|---|---|---|
+| S1 | live capture endpoints | `501 Not Implemented` | Npcap not installed; deferred since phase 1 |
+| S2 | model from the MLflow registry | `results/models/production.json`, written by `scripts/make_production_bundle.py`, names the run directory, unknown model, standardizer and the phase-4/5 operating point; `POST /model` reloads it | no registry was built |
+| S3 | batched `PATStream.step` with KV caches | the full PAT forward on each flow's prefix, through a new `PAT.forward(n_packets=)` that runs only the first n positions (tested equal to the full pass), with flows grouped by prefix length; score columns computed only at the positions just reached (`GaussianBank.mahal_at`, `UnknownModel.score_at`) | outputs equal the offline score pass (0 of 400 real flows differ, `tests/service/test_bundle.py`); no cache-eviction logic |
+| S9 | static API key | bound to `127.0.0.1`, no key; the entry point refuses another host | local demo |
+| — | streaming forced decision | the rule runs with `last_k = k_cap` while packets arrive; the forced branch fires on an end event, the 60 s idle timeout or `k_cap` | a stream does not know a flow's length; gives the offline replay's `(k, decision, class)` exactly (`tests/service/test_engine.py`) |
+| — | back-pressure | the hard ceiling `engine.queue_limit` (100k) is kept, and a replay additionally paces itself to the engine (queue held near 256 events) | without it a replay faster than the engine queues packets of flows the backlog is about to decide, and the lag grows without bound (seen on the first live run) |
+| — | 5k packet events/s, p95 batch < 5 ms | measured ~300 packet events/s (~23 flows/s at mean K ≈ 6), batch p95 ~380 ms, on this laptop's CPU with 4 torch threads | prefix recompute is compute-bound (a 64-flow batch is ~1-3.5 GFLOP depending on prefix length); batched `PATStream` stepping is the next step (`docs/future-work.md`) |

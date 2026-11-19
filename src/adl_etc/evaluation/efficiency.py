@@ -268,11 +268,17 @@ def bench_all(
     round with the smaller batch-1 median, and record the spread between rounds."""
     import torch
 
+    # the thread count is process-wide: restore it, or every later torch call in the process
+    # (another test's bit-exact training run, say) silently runs on this benchmark's setting
+    previous = torch.get_num_threads()
     torch.set_num_threads(threads)
     results: dict[str, list[dict[str, Any]]] = {n: [] for n in models}
-    for _ in range(rounds):
-        for name, model in models.items():
-            results[name].append(bench_model(model, **kw))
+    try:
+        for _ in range(rounds):
+            for name, model in models.items():
+                results[name].append(bench_model(model, **kw))
+    finally:
+        torch.set_num_threads(previous)
     out: dict[str, Any] = {}
     for name, runs in results.items():
         best = min(runs, key=lambda r: r["latency_batch1"]["median_ms"])
